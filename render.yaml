@@ -1,0 +1,39 @@
+services:
+  # Backend API - Python FastAPI
+  - type: web
+    name: igv-cms-backend
+    runtime: python
+    env: python
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt && bash download_fonts.sh
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: PORT
+        generateValue: false
+      - key: MONGODB_URI
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CMS_PASSWORD
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://israelgrowthventure.com,https://www.israelgrowthventure.com
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true

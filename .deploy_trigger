@@ -1,0 +1,4 @@
+# FORCE DEPLOY - 2025-12-29 17:03
+# This file triggers Render auto-deploy
+deploy_id = "c8f65e8-mini-analyse-fix"
+timestamp = "2025-12-29T17:03:00Z"

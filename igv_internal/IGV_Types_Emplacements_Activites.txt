@@ -1,0 +1,70 @@
+# IGV - Types, Emplacements et Activités
+# Document de référence interne pour l'analyse des implantations en Israël
+
+## TYPES D'EMPLACEMENTS COMMERCIAUX EN ISRAËL
+
+### Centres Commerciaux (Malls/Kanyons)
+- Azrieli Center (Tel Aviv)
+- Dizengoff Center (Tel Aviv)
+- Ramat Aviv Mall (Tel Aviv)
+- Cinema City Glilot (Ramat HaSharon)
+- G Rishon LeZion
+- Ayalon Mall (Ramat Gan)
+- Hadar Mall (Jerusalem)
+
+### Rues Commerçantes Principales
+- Dizengoff Street (Tel Aviv)
+- Rothschild Boulevard (Tel Aviv)
+- Ben Yehuda Street (Jerusalem)
+- Mamilla (Jerusalem)
+- Bialik Street (Ramat Gan)
+
+### Zones Industrielles / Business Parks
+- Har Hotzvim (Jerusalem)
+- Ramat HaHayal (Tel Aviv)
+- Airport City (Lod)
+
+### Quartiers par Type de Population
+- Quartiers laïcs: Tel Aviv Centre, Ramat Aviv
+- Quartiers religieux: Bnei Brak, Modiin Illit, Beitar Illit
+- Quartiers mixtes: Jerusalem Ouest, Netanya Centre
+- Quartiers arabes: Nazareth, Umm al-Fahm, Taybeh
+
+## SECTEURS D'ACTIVITÉ
+
+### Restauration / Food
+- Fast Food
+- Casual Dining
+- Fine Dining
+- Coffee Shops
+- Boulangeries/Pâtisseries
+- Épiceries fines
+
+### Retail (hors Food)
+- Mode/Habillement
+- Chaussures
+- Accessoires
+- Décoration
+- Électronique
+- Librairies
+
+### Services
+- Salons de beauté
+- Coiffure
+- Centres de remise en forme
+- Laveries
+- Services financiers
+
+### Paramédical / Santé
+- Cliniques dentaires
+- Optique
+- Pharmacies
+- Centres de physiothérapie
+- Centres de bien-être
+
+## RÈGLES D'IMPLANTATION
+
+1. CASHER: Obligatoire pour viser le marché religieux (Bnei Brak, Jerusalem religieux)
+2. HALAL: Indispensable pour le marché arabe (Nazareth, Umm al-Fahm)
+3. SHABBAT: Fermeture obligatoire dans zones religieuses (vendredi soir au samedi soir)
+4. POPULATION CIBLE: Adapter le concept selon quartier (laïc/religieux/mixte/arabe)
