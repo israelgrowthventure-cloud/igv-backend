@@ -1,4 +1,4 @@
-"""
+﻿"""
 CRM Complete Routes - Production Ready MVP
 All 5 modules: Dashboard, Leads, Pipeline, Contacts, Settings
 Uses centralized auth_middleware for authentication and RBAC
@@ -512,6 +512,51 @@ async def delete_lead(lead_id: str, user: Dict = Depends(get_current_user)):
     
     return {"message": "Lead deleted successfully"}
 
+
+
+@router.get("/leads/{lead_id}/notes")
+async def get_lead_notes(lead_id: str, user: Dict = Depends(get_current_user)):
+    """Get all notes for a lead - fetches from activities collection"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        # Verify lead exists
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        # Fetch notes from activities collection (notes are stored as type='note')
+        notes_cursor = current_db.activities.find({
+            "lead_id": lead_id,
+            "type": "note"
+        }).sort("created_at", -1)
+
+        notes = await notes_cursor.to_list(100)
+
+        # Format notes for frontend
+        formatted_notes = []
+        for note in notes:
+            note_content = note.get("description") or note.get("note_text") or note.get("details") or ""
+            formatted_notes.append({
+                "id": str(note["_id"]),
+                "_id": str(note["_id"]),
+                "content": note_content,
+                "note_text": note_content,
+                "details": note_content,
+                "created_at": note.get("created_at").isoformat() if isinstance(note.get("created_at"), datetime) else str(note.get("created_at", "")),
+                "created_by": note.get("user_email") or note.get("created_by") or "Unknown",
+                "user_email": note.get("user_email") or note.get("created_by") or "Unknown"
+            })
+
+        return {"notes": formatted_notes, "count": len(formatted_notes)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching lead notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/leads/{lead_id}/notes")
 async def add_note_to_lead(lead_id: str, note: NoteCreate, user: Dict = Depends(get_current_user)):
@@ -1650,14 +1695,14 @@ async def get_pipeline_stages(user: Dict = Depends(get_current_user)):
     
     settings = await current_db.crm_settings.find_one({}) or {}
     stages = settings.get("pipeline_stages", [
-        {"key": "analysis_requested", "label_fr": "Analyse demandée", "label_en": "Analysis requested", "label_he": "ניתוח התבקש"},
-        {"key": "analysis_sent", "label_fr": "Analyse envoyée", "label_en": "Analysis sent", "label_he": "ניתוח נשלח"},
-        {"key": "call_scheduled", "label_fr": "Appel planifié", "label_en": "Call scheduled", "label_he": "שיחה מתוזמנת"},
-        {"key": "qualification", "label_fr": "Qualification", "label_en": "Qualification", "label_he": "הסמכה"},
-        {"key": "proposal_sent", "label_fr": "Proposition envoyée", "label_en": "Proposal sent", "label_he": "הצעה נשלחה"},
-        {"key": "negotiation", "label_fr": "Négociation", "label_en": "Negotiation", "label_he": "משא ומתן"},
-        {"key": "won", "label_fr": "Signé / Lancement", "label_en": "Signed / Launch", "label_he": "חתום / השקה"},
-        {"key": "lost", "label_fr": "Perdu / Sans suite", "label_en": "Lost / No follow-up", "label_he": "אבד / ללא מעקב"}
+        {"key": "analysis_requested", "label_fr": "Analyse demandֳ©e", "label_en": "Analysis requested", "label_he": "׳ ׳™׳×׳•׳— ׳”׳×׳‘׳§׳©"},
+        {"key": "analysis_sent", "label_fr": "Analyse envoyֳ©e", "label_en": "Analysis sent", "label_he": "׳ ׳™׳×׳•׳— ׳ ׳©׳׳—"},
+        {"key": "call_scheduled", "label_fr": "Appel planifiֳ©", "label_en": "Call scheduled", "label_he": "׳©׳™׳—׳” ׳׳×׳•׳–׳׳ ׳×"},
+        {"key": "qualification", "label_fr": "Qualification", "label_en": "Qualification", "label_he": "׳”׳¡׳׳›׳”"},
+        {"key": "proposal_sent", "label_fr": "Proposition envoyֳ©e", "label_en": "Proposal sent", "label_he": "׳”׳¦׳¢׳” ׳ ׳©׳׳—׳”"},
+        {"key": "negotiation", "label_fr": "Nֳ©gociation", "label_en": "Negotiation", "label_he": "׳׳©׳ ׳•׳׳×׳"},
+        {"key": "won", "label_fr": "Signֳ© / Lancement", "label_en": "Signed / Launch", "label_he": "׳—׳×׳•׳ / ׳”׳©׳§׳”"},
+        {"key": "lost", "label_fr": "Perdu / Sans suite", "label_en": "Lost / No follow-up", "label_he": "׳׳‘׳“ / ׳׳׳ ׳׳¢׳§׳‘"}
     ])
     
     return {"stages": stages}
@@ -1712,7 +1757,7 @@ async def get_activities(
 async def create_lead_from_pack(data: LeadFromPackRequest):
     """
     Enregistre demande de rappel depuis /packs (PUBLIQUE - pas d'auth)
-    Crée lead avec status=new, source=pack_rappel, assigned_to=null
+    Crֳ©e lead avec status=new, source=pack_rappel, assigned_to=null
     Admin redistribuera manuellement
     """
     current_db = get_db()
@@ -1741,14 +1786,14 @@ async def create_lead_from_pack(data: LeadFromPackRequest):
         
         result = await current_db.leads.insert_one(lead_doc)
         
-        logging.info(f"✅ Lead created from pack: {data.email} - Pack: {data.pack_requested}")
+        logging.info(f"ג… Lead created from pack: {data.email} - Pack: {data.pack_requested}")
         
         return {
             "success": True,
             "lead_id": str(result.inserted_id),
-            "message": "Demande enregistrée avec succès"
+            "message": "Demande enregistrֳ©e avec succֳ¨s"
         }
         
     except Exception as e:
-        logging.error(f"❌ Error creating lead from pack: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la création: {str(e)}")
+        logging.error(f"ג Error creating lead from pack: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la crֳ©ation: {str(e)}")
