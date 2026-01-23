@@ -1017,7 +1017,7 @@ async def startup_db_init():
 
 
 async def create_default_admin_if_not_exists():
-    """Create default admin user in crm_users if not exists"""
+    """Create default admin user in crm_users - ALWAYS ensures correct password"""
     if db is None:
         return
     
@@ -1028,16 +1028,33 @@ async def create_default_admin_if_not_exists():
         # Check in crm_users first
         existing = await db.crm_users.find_one({"email": admin_email})
         if existing:
-            logging.info(f"✓ Admin user already exists: {admin_email}")
+            # UPDATE password to ensure it's correct
+            await db.crm_users.update_one(
+                {"email": admin_email},
+                {"$set": {
+                    "password_hash": hash_password(admin_password),
+                    "role": "admin",
+                    "is_active": True,
+                    "updated_at": datetime.now(timezone.utc)
+                }}
+            )
+            logging.info(f"✓ Admin password updated in crm_users: {admin_email}")
             return
         
-        # Check in legacy users collection
+        # Check in legacy users collection - if exists, create in crm_users anyway
         existing_legacy = await db.users.find_one({"email": admin_email})
         if existing_legacy:
-            logging.info(f"✓ Admin user exists in legacy collection: {admin_email}")
-            return
+            # Also update legacy collection password
+            await db.users.update_one(
+                {"email": admin_email},
+                {"$set": {
+                    "password_hash": hash_password(admin_password),
+                    "role": "admin"
+                }}
+            )
+            logging.info(f"✓ Admin password updated in legacy users: {admin_email}")
         
-        # Create admin in crm_users
+        # Create admin in crm_users (even if exists in legacy - for consistency)
         import uuid
         admin_doc = {
             "id": str(uuid.uuid4()),
@@ -1056,7 +1073,7 @@ async def create_default_admin_if_not_exists():
         }
         
         await db.crm_users.insert_one(admin_doc)
-        logging.info(f"✓ Default admin created: {admin_email}")
+        logging.info(f"✓ Default admin created in crm_users: {admin_email}")
         
     except Exception as e:
         logging.error(f"Failed to create default admin: {e}")
