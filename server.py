@@ -43,6 +43,18 @@ from quota_queue_routes import router as quota_router
 from admin_user_routes import router as admin_user_router
 from cms_routes import router as cms_router  # Phase 5: CMS, Media & Auth
 
+# Email templates seed router
+try:
+    from email_templates_seed import router as email_templates_seed_router
+    from email_templates_seed import auto_seed_templates_if_empty
+    EMAIL_TEMPLATES_SEED_LOADED = True
+    logging.info("✓ Email templates seed router loaded successfully")
+except Exception as e:
+    logging.error(f"✗ Failed to load email_templates_seed: {e}")
+    EMAIL_TEMPLATES_SEED_LOADED = False
+    email_templates_seed_router = None
+    auto_seed_templates_if_empty = None
+
 # New routers with error handling
 INVOICE_ROUTER_ERROR = None
 MONETICO_ROUTER_ERROR = None
@@ -927,6 +939,13 @@ if MONETICO_ROUTER_LOADED and monetico_router:
 else:
     logging.warning("✗ Monetico router not registered (import failed)")
 
+# Email templates seed router
+if EMAIL_TEMPLATES_SEED_LOADED and email_templates_seed_router:
+    app.include_router(email_templates_seed_router)  # Email Templates Seed endpoints
+    logging.info("✓ Email templates seed router registered")
+else:
+    logging.warning("✗ Email templates seed router not registered (import failed)")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -956,6 +975,10 @@ async def startup_db_init():
             await db.activities.create_index("lead_id", background=True)
             await db.activities.create_index("created_at", background=True)
             logging.info("✓ MongoDB indexes created/verified")
+            
+            # Auto-seed email templates if collection is empty
+            if EMAIL_TEMPLATES_SEED_LOADED and auto_seed_templates_if_empty:
+                await auto_seed_templates_if_empty()
         except Exception as e:
             logging.warning(f"Index creation skipped: {e}")
 

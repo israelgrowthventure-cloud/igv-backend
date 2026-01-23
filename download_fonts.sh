@@ -4,7 +4,7 @@
 
 set -e  # Exit on error
 
-echo "🔤 Downloading Hebrew font for PDF generation..."
+echo "🔤 Checking Hebrew font for PDF generation..."
 
 # Determine the script location
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -12,28 +12,37 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Create fonts directory if not exists (in the same dir as this script)
 mkdir -p "$SCRIPT_DIR/fonts"
 
-# Download Noto Sans Hebrew Regular from Google Fonts GitHub
-FONT_URL="https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSansHebrew/NotoSansHebrew-Regular.ttf"
 FONT_PATH="$SCRIPT_DIR/fonts/NotoSansHebrew-Regular.ttf"
 
-# Download font
-if [ ! -f "$FONT_PATH" ]; then
-    echo "⬇️  Downloading from: $FONT_URL"
-    curl -L -o "$FONT_PATH" "$FONT_URL" || wget -O "$FONT_PATH" "$FONT_URL"
-    
-    if [ -f "$FONT_PATH" ]; then
-        FILE_SIZE=$(stat -c%s "$FONT_PATH" 2>/dev/null || stat -f%z "$FONT_PATH" 2>/dev/null || echo "unknown")
-        echo "✅ Hebrew font downloaded successfully ($FILE_SIZE bytes)"
-        echo "   Location: $FONT_PATH"
-    else
-        echo "❌ Failed to download Hebrew font"
-        exit 1
-    fi
-else
-    echo "✅ Hebrew font already exists at $FONT_PATH"
+# Check if font already exists in repo (committed)
+if [ -f "$FONT_PATH" ]; then
+    FILE_SIZE=$(stat -c%s "$FONT_PATH" 2>/dev/null || stat -f%z "$FONT_PATH" 2>/dev/null || echo "unknown")
+    echo "✅ Hebrew font already exists in repo ($FILE_SIZE bytes)"
+    echo "   Location: $FONT_PATH"
+    chmod 644 "$FONT_PATH"
+    exit 0
 fi
 
-# Set permissions
-chmod 644 "$FONT_PATH"
+# Download Noto Sans Hebrew Regular from Google Fonts GitHub (updated URL)
+echo "⬇️  Downloading Hebrew font..."
+FONT_URLS=(
+    "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansHebrew/NotoSansHebrew-Regular.ttf"
+    "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSansHebrew/NotoSansHebrew-Regular.ttf"
+    "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansHebrew/NotoSansHebrew-Regular.ttf"
+)
 
-echo "🎉 Font installation complete!"
+for FONT_URL in "${FONT_URLS[@]}"; do
+    echo "   Trying: $FONT_URL"
+    if curl -L -s -o "$FONT_PATH" "$FONT_URL" && [ -f "$FONT_PATH" ] && [ -s "$FONT_PATH" ]; then
+        FILE_SIZE=$(stat -c%s "$FONT_PATH" 2>/dev/null || stat -f%z "$FONT_PATH" 2>/dev/null || echo "unknown")
+        if [ "$FILE_SIZE" -gt 1000 ]; then
+            echo "✅ Hebrew font downloaded successfully ($FILE_SIZE bytes)"
+            chmod 644 "$FONT_PATH"
+            exit 0
+        fi
+    fi
+    rm -f "$FONT_PATH"  # Remove failed download
+done
+
+echo "⚠️  Could not download Hebrew font - will use system fallback"
+exit 0  # Don't fail build, fallback fonts may work

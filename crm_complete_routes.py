@@ -1515,17 +1515,25 @@ class EmailTemplateCreate(BaseModel):
 
 
 @router.get("/emails/templates")
-async def get_email_templates(user: Dict = Depends(get_current_user)):
-    """Get all email templates"""
+async def get_email_templates(
+    user: Dict = Depends(get_current_user),
+    language: Optional[str] = Query(None, description="Filter templates by language (fr, en, he)")
+):
+    """Get email templates, optionally filtered by language"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
     
-    templates = await current_db.email_templates.find({}).to_list(100)
+    # Build query filter
+    query = {}
+    if language and language in ["fr", "en", "he"]:
+        query["language"] = language
+    
+    templates = await current_db.email_templates.find(query).to_list(100)
     for template in templates:
         template["_id"] = str(template["_id"])
     
-    return {"templates": templates}
+    return {"templates": templates, "language_filter": language, "count": len(templates)}
 
 
 @router.post("/emails/templates")
