@@ -747,23 +747,52 @@ async def bootstrap_admin(token: str):
 
 @api_router.post("/admin/login")
 async def admin_login(credentials: AdminLoginRequest):
-    """Admin login - returns JWT token"""
+    """Admin login - returns JWT token
+    Searches crm_users first (new collection), then users (legacy)
+    """
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
-    user = await db.users.find_one({"email": credentials.email})
+    # Search crm_users first (CRM users), then fallback to users (legacy)
+    user = await db.crm_users.find_one({"email": credentials.email})
+    if not user:
+        user = await db.users.find_one({"email": credentials.email})
+    
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    if not verify_password(credentials.password, user['password_hash']):
+    # Check if user is active (for crm_users)
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=401, detail="Account is inactive")
+    
+    # Password field can be 'password_hash' or 'password' depending on collection
+    password_hash = user.get('password_hash') or user.get('password')
+    if not password_hash:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    token = create_jwt_token(user['email'], user['role'])
+    if not verify_password(credentials.password, password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Get role (default to admin for legacy users without role)
+    user_role = user.get('role', 'admin')
+    user_name = user.get('name') or user.get('first_name', '') + ' ' + user.get('last_name', '')
+    user_name = user_name.strip() or credentials.email.split('@')[0]
+    
+    token = create_jwt_token(credentials.email, user_role)
+    
+    # Update last_login timestamp
+    collection = db.crm_users if await db.crm_users.find_one({"email": credentials.email}) else db.users
+    await collection.update_one(
+        {"email": credentials.email},
+        {"$set": {"last_login": datetime.now(timezone.utc)}}
+    )
     
     return {
         "access_token": token,
         "token_type": "bearer",
-        "role": user['role']
+        "role": user_role,
+        "email": credentials.email,
+        "name": user_name
     }
 
 @api_router.get("/admin/verify")

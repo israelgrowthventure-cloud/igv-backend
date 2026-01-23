@@ -453,7 +453,12 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
 
 @router.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, update_data: LeadUpdate, user: Dict = Depends(get_current_user)):
-    """Update lead"""
+    """Update lead
+    
+    RBAC Rules:
+    - Admin: Can update ANY lead field including owner_email (assignment)
+    - Commercial: Can only update leads assigned to them, CANNOT change owner_email
+    """
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
@@ -465,6 +470,15 @@ async def update_lead(lead_id: str, update_data: LeadUpdate, user: Dict = Depend
     
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # RBAC: Commercial can only update their own leads
+    if user["role"] == "commercial":
+        if lead.get("assigned_to") != user["email"] and lead.get("owner_email") != user["email"]:
+            raise HTTPException(status_code=403, detail="You can only update leads assigned to you")
+        
+        # Commercial CANNOT reassign leads (change owner_email)
+        if update_data.owner_email is not None:
+            raise HTTPException(status_code=403, detail="Only admin can reassign leads")
     
     # Build update
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
@@ -493,8 +507,8 @@ async def update_lead(lead_id: str, update_data: LeadUpdate, user: Dict = Depend
 
 
 @router.delete("/leads/{lead_id}")
-async def delete_lead(lead_id: str, user: Dict = Depends(get_current_user)):
-    """Delete lead (admin only)"""
+async def delete_lead(lead_id: str, user: Dict = Depends(require_admin)):
+    """Delete lead (admin only - uses require_admin dependency)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
@@ -512,6 +526,67 @@ async def delete_lead(lead_id: str, user: Dict = Depends(get_current_user)):
     
     return {"message": "Lead deleted successfully"}
 
+
+@router.post("/leads/{lead_id}/assign")
+async def assign_lead(lead_id: str, data: Dict = Body(...), user: Dict = Depends(require_admin)):
+    """Assign lead to a commercial user (Admin only)
+    
+    Body: {"owner_email": "commercial@example.com"}
+    
+    RBAC: Only admin can assign/reassign leads
+    """
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    owner_email = data.get("owner_email")
+    if not owner_email:
+        raise HTTPException(status_code=400, detail="owner_email is required")
+    
+    # Check lead exists
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid lead ID")
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Verify target user exists
+    target_user = await current_db.crm_users.find_one({"email": owner_email})
+    if not target_user:
+        target_user = await current_db.users.find_one({"email": owner_email})
+    if not target_user:
+        raise HTTPException(status_code=404, detail=f"User {owner_email} not found")
+    
+    # Update lead assignment
+    old_owner = lead.get("owner_email") or lead.get("assigned_to")
+    await current_db.leads.update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {
+            "owner_email": owner_email,
+            "assigned_to": owner_email,
+            "assigned_at": datetime.now(timezone.utc),
+            "assigned_by": user["email"],
+            "updated_at": datetime.now(timezone.utc)
+        }}
+    )
+    
+    # Log activity
+    await current_db.activities.insert_one({
+        "type": "assignment",
+        "subject": "Lead assigned",
+        "description": f"Lead assigned from {old_owner or 'unassigned'} to {owner_email} by {user['email']}",
+        "lead_id": lead_id,
+        "user_id": user["id"],
+        "user_email": user["email"],
+        "metadata": {"from": old_owner, "to": owner_email},
+        "created_at": datetime.now(timezone.utc)
+    })
+    
+    logging.info(f"Lead {lead_id} assigned to {owner_email} by {user['email']}")
+    
+    return {"message": f"Lead assigned to {owner_email}", "owner_email": owner_email}
 
 
 @router.get("/leads/{lead_id}/notes")
