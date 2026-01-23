@@ -1008,8 +1008,58 @@ async def startup_db_init():
             # Auto-seed email templates if collection is empty
             if EMAIL_TEMPLATES_SEED_LOADED and auto_seed_templates_if_empty:
                 await auto_seed_templates_if_empty()
+            
+            # Create default admin if not exists
+            await create_default_admin_if_not_exists()
+            
         except Exception as e:
             logging.warning(f"Index creation skipped: {e}")
+
+
+async def create_default_admin_if_not_exists():
+    """Create default admin user in crm_users if not exists"""
+    if db is None:
+        return
+    
+    admin_email = "postmaster@israelgrowthventure.com"
+    admin_password = "Admin@igv2025#"
+    
+    try:
+        # Check in crm_users first
+        existing = await db.crm_users.find_one({"email": admin_email})
+        if existing:
+            logging.info(f"✓ Admin user already exists: {admin_email}")
+            return
+        
+        # Check in legacy users collection
+        existing_legacy = await db.users.find_one({"email": admin_email})
+        if existing_legacy:
+            logging.info(f"✓ Admin user exists in legacy collection: {admin_email}")
+            return
+        
+        # Create admin in crm_users
+        import uuid
+        admin_doc = {
+            "id": str(uuid.uuid4()),
+            "email": admin_email,
+            "first_name": "Mickael",
+            "last_name": "Benmoussa",
+            "name": "Mickael Benmoussa",
+            "password_hash": hash_password(admin_password),
+            "role": "admin",
+            "is_active": True,
+            "is_verified": True,
+            "assigned_leads": [],
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "created_by": "system_bootstrap"
+        }
+        
+        await db.crm_users.insert_one(admin_doc)
+        logging.info(f"✓ Default admin created: {admin_email}")
+        
+    except Exception as e:
+        logging.error(f"Failed to create default admin: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
