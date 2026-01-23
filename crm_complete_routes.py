@@ -1248,6 +1248,44 @@ async def update_crm_user(user_id: str, update_data: UserUpdate, user: Dict = De
     return {"message": "User updated successfully"}
 
 
+@router.delete("/settings/users/{user_id}")
+async def delete_crm_user(user_id: str, user: Dict = Depends(get_current_user)):
+    """Delete CRM user (admin only)"""
+    await require_admin(user)
+    
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        target_user = await current_db.crm_users.find_one({"_id": ObjectId(user_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Prevent self-deletion
+    if str(target_user["_id"]) == user.get("id"):
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    await current_db.crm_users.delete_one({"_id": ObjectId(user_id)})
+    
+    # Audit log
+    await current_db.audit_logs.insert_one({
+        "user_id": user["id"],
+        "user_email": user["email"],
+        "action": "delete",
+        "entity_type": "crm_user",
+        "entity_id": user_id,
+        "before": {"email": target_user.get("email"), "role": target_user.get("role")},
+        "after": None,
+        "created_at": datetime.now(timezone.utc)
+    })
+    
+    return {"message": "User deleted successfully"}
+
+
 @router.post("/settings/users/change-password")
 async def change_password(password_data: PasswordChange, user: Dict = Depends(get_current_user)):
     """Change current user's password"""

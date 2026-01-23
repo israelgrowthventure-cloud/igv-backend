@@ -1012,6 +1012,9 @@ async def startup_db_init():
             # Create default admin if not exists
             await create_default_admin_if_not_exists()
             
+            # Cleanup other users - keep only admin
+            await cleanup_other_users()
+            
         except Exception as e:
             logging.warning(f"Index creation skipped: {e}")
 
@@ -1077,6 +1080,28 @@ async def create_default_admin_if_not_exists():
         
     except Exception as e:
         logging.error(f"Failed to create default admin: {e}")
+
+
+async def cleanup_other_users():
+    """Remove all users except the admin postmaster@israelgrowthventure.com"""
+    if db is None:
+        return
+    
+    admin_email = "postmaster@israelgrowthventure.com"
+    
+    try:
+        # Delete all crm_users except admin
+        result = await db.crm_users.delete_many({"email": {"$ne": admin_email}})
+        if result.deleted_count > 0:
+            logging.info(f"✓ Cleaned up {result.deleted_count} users from crm_users (kept only {admin_email})")
+        
+        # Also clean legacy users except admin
+        result_legacy = await db.users.delete_many({"email": {"$ne": admin_email}})
+        if result_legacy.deleted_count > 0:
+            logging.info(f"✓ Cleaned up {result_legacy.deleted_count} users from legacy users collection")
+            
+    except Exception as e:
+        logging.error(f"Failed to cleanup users: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
