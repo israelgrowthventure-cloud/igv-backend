@@ -19,6 +19,8 @@ import jwt
 import hashlib
 import hmac
 import traceback
+import bcrypt
+import re
 
 # Conditional email imports (don't crash if not available)
 try:
@@ -376,13 +378,39 @@ class MoneticopaymentRequest(BaseModel):
 # Security
 security = HTTPBearer()
 
+def is_sha256_hash(hash_str: str) -> bool:
+    """Check if string looks like a SHA256 hash (64 hex characters)"""
+    return bool(hash_str and len(hash_str) == 64 and re.match(r'^[a-fA-F0-9]+$', hash_str))
+
+def is_bcrypt_hash(hash_str: str) -> bool:
+    """Check if string looks like a bcrypt hash (starts with $2a$, $2b$, or $2y$)"""
+    return bool(hash_str and hash_str.startswith(('$2a$', '$2b$', '$2y$')))
+
 def hash_password(password: str) -> str:
-    """Hash password using SHA-256"""
+    """Hash password using bcrypt (standard secure method)"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def hash_password_sha256(password: str) -> str:
+    """Legacy SHA256 hash - for compatibility check only"""
     return hashlib.sha256(password.encode()).hexdigest()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against hash"""
-    return hash_password(plain_password) == hashed_password
+    """Verify password against hash - supports bcrypt AND legacy SHA256"""
+    if not hashed_password:
+        return False
+    
+    # Try bcrypt first (new standard)
+    if is_bcrypt_hash(hashed_password):
+        try:
+            return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+        except Exception:
+            return False
+    
+    # Fallback to SHA256 (legacy compatibility)
+    if is_sha256_hash(hashed_password):
+        return hash_password_sha256(plain_password) == hashed_password
+    
+    return False
 
 def create_jwt_token(email: str, role: str) -> str:
     """Create JWT token"""
@@ -772,6 +800,16 @@ async def admin_login(credentials: AdminLoginRequest):
     
     if not verify_password(credentials.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # MIGRATION: Si le hash est SHA256, migrer vers bcrypt
+    if is_sha256_hash(password_hash):
+        new_hash = hash_password(credentials.password)
+        collection_for_migrate = db.crm_users if await db.crm_users.find_one({"email": credentials.email}) else db.users
+        await collection_for_migrate.update_one(
+            {"email": credentials.email},
+            {"$set": {"password_hash": new_hash}}
+        )
+        logging.info(f"✓ Password hash migrated from SHA256 to bcrypt for {credentials.email}")
     
     # Get role (default to admin for legacy users without role)
     user_role = user.get('role', 'admin')
