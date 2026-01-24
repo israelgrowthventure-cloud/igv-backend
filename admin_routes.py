@@ -193,6 +193,22 @@ async def get_lead_stats_admin(range: str = "7d"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/logout")
+async def admin_logout():
+    """
+    POST /api/admin/logout
+    
+    Invalidate current session (frontend should discard token).
+    Returns success response for frontend to complete logout flow.
+    """
+    # JWT tokens are stateless - just return success
+    # Frontend will discard the token from localStorage
+    return {
+        "success": True,
+        "message": "Logged out successfully"
+    }
+
+
 @router.post("/process-pending")
 async def process_pending_analyses(limit: int = 10):
     """

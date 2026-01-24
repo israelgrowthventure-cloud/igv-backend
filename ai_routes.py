@@ -21,12 +21,11 @@ import logging
 
 router = APIRouter(prefix='/api/ai', tags=['AI Insights'])
 
-# OpenAI API Key
+# OpenAI API Key (optional - Gemini is used as primary AI)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if OPENAI_API_KEY:
     openai.api_key = OPENAI_API_KEY
-else:
-    logging.warning("OPENAI_API_KEY not configured")
+# Note: OpenAI is optional, Gemini is the primary AI service
 
 
 class InsightRequest(BaseModel):

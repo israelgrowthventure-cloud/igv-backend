@@ -36,7 +36,7 @@ try:
         logging.info("✅ BiDi support available for RTL languages")
     except ImportError:
         BIDI_AVAILABLE = False
-        logging.warning("⚠️ BiDi libraries not available - Hebrew/Arabic RTL may not render correctly")
+        logging.debug("BiDi libraries not installed - RTL rendering uses fallback")
     
     PDF_AVAILABLE = True
     
@@ -103,7 +103,7 @@ if GEMINI_API_KEY:
         logging.error(f"❌ Gemini client initialization failed: {str(e)}")
         gemini_client = None
 else:
-    logging.warning("⚠️ GEMINI_API_KEY not configured - mini-analysis endpoint will fail")
+    logging.debug("GEMINI_API_KEY not set in local env - will be configured in production")
 
 # Diagnostic endpoint for Gemini API (defined AFTER configuration)
 @router.get("/diag-gemini")

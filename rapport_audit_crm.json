@@ -1,0 +1,593 @@
+{
+  "date_execution": "2026-01-24T22:16:16.714005",
+  "resume": {
+    "ok": 54,
+    "ko": 12,
+    "total": 66
+  },
+  "phases": {
+    "AUTH": [
+      {
+        "test": "Login Admin",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:19.296574",
+        "response": "{'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InBvc3RtYXN0ZXJAaXNyYWVsZ3Jvd3RodmVudHVyZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3NjkzNzIxNzcsImlhdCI6MTc2OTI4NTc3N30.LBcXtBmKxCbJyRj5-9Uvf_G1DRvTnfVxPW8W2HnmblI', 'token_type': 'bearer', 'role': 'admin', 'email': 'postmaster@israelgrowthventure.com', 'name': 'mickael benmoussa'}"
+      },
+      {
+        "test": "Login Commercial",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:21.593814",
+        "response": "{'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImNvbW1lcmNpYWwudGVzdEBpZ3YuY28uaWwiLCJyb2xlIjoiY29tbWVyY2lhbCIsImV4cCI6MTc2OTM3MjE3OSwiaWF0IjoxNzY5Mjg1Nzc5fQ.Xc9wRJTU3HKk-cCBCFKsiHEG8mtPg9-bBwl7pQmtkMU', 'token_type': 'bearer', 'role': 'commercial', 'email': 'commercial.test@igv.co.il', 'name': 'Commercial Test'}"
+      },
+      {
+        "test": "Logout endpoint",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:16:23.940978",
+        "response": "{'detail': 'Not Found'}"
+      }
+    ],
+    "LEADS": [
+      {
+        "test": "Créer Prospect Admin",
+        "status": "✅ OK",
+        "details": "Code 201",
+        "response_code": 201,
+        "timestamp": "2026-01-24T22:16:27.231216",
+        "response": "{'lead_id': '69752899a4aac71f1f3f82c8', 'message': 'Lead created successfully'}"
+      },
+      {
+        "test": "Lire Prospect créé",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:29.439288",
+        "response": "{'_id': '69752899a4aac71f1f3f82c8', 'email': 'prospect.test.vtvumh@example.com', 'brand_name': 'Marque Test VTVUMH', 'name': 'Jean Dupont Test', 'phone': '+33612345678', 'sector': 'Restauration', 'language': 'fr', 'expansion_type': None, 'format': None, 'budget_estimated': None, 'target_city': None, 'timeline': None, 'source': 'audit_test', 'utm_source': None, 'utm_medium': None, 'utm_campaign': None, 'status': 'NEW', 'stage': 'analysis_requested', 'priority': 'B', 'tags': [], 'created_at': '202"
+      },
+      {
+        "test": "Attribuer au Commercial",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:32.443897",
+        "response": "{'message': 'Lead assigned to commercial.test@igv.co.il', 'owner_email': 'commercial.test@igv.co.il'}"
+      },
+      {
+        "test": "Vérifier Assignation",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:34.735052",
+        "response": "{'_id': '69752899a4aac71f1f3f82c8', 'email': 'prospect.test.vtvumh@example.com', 'brand_name': 'Marque Test VTVUMH', 'name': 'Jean Dupont Test', 'phone': '+33612345678', 'sector': 'Restauration', 'language': 'fr', 'expansion_type': None, 'format': None, 'budget_estimated': None, 'target_city': None, 'timeline': None, 'source': 'audit_test', 'utm_source': None, 'utm_medium': None, 'utm_campaign': None, 'status': 'NEW', 'stage': 'analysis_requested', 'priority': 'B', 'tags': [], 'created_at': '202"
+      },
+      {
+        "test": "Assignation confirmée",
+        "status": "✅ OK",
+        "details": "Assigné à commercial.test@igv.co.il",
+        "response_code": null,
+        "timestamp": "2026-01-24T22:16:34.738632"
+      }
+    ],
+    "ACCES_COMMERCIAL": [
+      {
+        "test": "Dashboard Stats",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:38.954173",
+        "response": "{'leads': {'today': 3, 'last_7_days': 3, 'last_30_days': 116, 'total': 117}, 'opportunities': {'open': 2, 'won': 0, 'pipeline_value': 100000.0}, 'tasks': {'overdue': 0}, 'top_sources': [{'source': None, 'count': 116}], 'stage_distribution': [{'stage': 'analysis_requested', 'count': 66}, {'stage': None, 'count': 51}]}"
+      },
+      {
+        "test": "Liste Leads",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:41.036451",
+        "response": "{'leads': [{'_id': '69752899a4aac71f1f3f82c8', 'email': 'prospect.test.vtvumh@example.com', 'brand_name': 'Marque Test VTVUMH', 'name': 'Jean Dupont Test', 'phone': '+33612345678', 'sector': 'Restauration', 'language': 'fr', 'expansion_type': None, 'format': None, 'budget_estimated': None, 'target_city': None, 'timeline': None, 'source': 'audit_test', 'utm_source': None, 'utm_medium': None, 'utm_campaign': None, 'status': 'NEW', 'stage': 'analysis_requested', 'priority': 'B', 'tags': [], 'create"
+      },
+      {
+        "test": "Liste Contacts",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:43.000688",
+        "response": "{'contacts': [], 'total': 0, 'skip': 0, 'limit': 50}"
+      },
+      {
+        "test": "Liste Opportunités",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:45.195212",
+        "response": "{'opportunities': [], 'total': 0}"
+      },
+      {
+        "test": "Pipeline",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:48.558861",
+        "response": "{'pipeline': {'analysis_requested': [], 'analysis_sent': [], 'call_scheduled': [], 'qualification': [{'_id': '69640fa722a9d6f85a9fd76b', 'name': 'Opportunité - test8', 'lead_id': '69636ce27a791a363a13b993', 'contact_id': None, 'value': 100000.0, 'stage': 'qualification', 'probability': 25, 'expected_close_date': '2026-02-10T00:00:00', 'owner_id': '6959ff90c0ae99e54ef6174e', 'owner_email': 'postmaster@israelgrowthventure.com', 'is_closed': False, 'is_won': False, 'created_at': '2026-01-11T21:01:2"
+      },
+      {
+        "test": "Activités",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:50.760430",
+        "response": "{'activities': [{'_id': '6975289ea4aac71f1f3f82ca', 'type': 'assignment', 'subject': 'Lead assigned', 'description': 'Lead assigned from unassigned to commercial.test@igv.co.il by postmaster@israelgrowthventure.com', 'lead_id': '69752899a4aac71f1f3f82c8', 'user_id': '6959ff90c0ae99e54ef6174e', 'user_email': 'postmaster@israelgrowthventure.com', 'metadata': {'from': None, 'to': 'commercial.test@igv.co.il'}, 'created_at': '2026-01-24T20:16:30.869000'}, {'_id': '69752899a4aac71f1f3f82c9', 'type': '"
+      },
+      {
+        "test": "Tâches",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:53.132689",
+        "response": "{'tasks': [{'_id': '69752544a4aac71f1f3f82bd', 'title': 'Tâche test audit - 220212', 'description': \"Tâche créée lors de l'audit commercial\", 'assigned_to_email': None, 'lead_id': None, 'contact_id': None, 'opportunity_id': None, 'due_date': '2026-02-01T00:00:00', 'priority': 'high', 'created_by_email': 'commercial.test@igv.co.il', 'created_by_id': '69752226a4aac71f1f3f82b8', 'is_completed': False, 'completed_at': None, 'created_at': '2026-01-24T20:02:12.277000', 'updated_at': '2026-01-24T20:02:"
+      },
+      {
+        "test": "Historique Emails",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:54.811190",
+        "response": "{'emails': [], 'total': 0}"
+      },
+      {
+        "test": "Templates Emails",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:56.490722",
+        "response": "{'templates': [{'_id': '695c3eb311092d68173f09c7', 'name': \"Premier contact - Demande d'information\", 'subject': \"Votre projet d'expansion en Israël - Israel Growth Venture\", 'body': \"Bonjour,\\n\\nSuite à votre demande concernant votre projet d'expansion en Israël, je me permets de vous contacter.\\n\\nChez Israel Growth Venture, nous accompagnons les marques dans leur développement sur le marché israélien, de l'analyse préliminaire jusqu'à l'ouverture effective.\\n\\nJe serais ravi d'échanger avec v"
+      }
+    ],
+    "LEADS_COMMERCIAL": [
+      {
+        "test": "Voir Lead Assigné",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:16:58.411696",
+        "response": "{'_id': '69752899a4aac71f1f3f82c8', 'email': 'prospect.test.vtvumh@example.com', 'brand_name': 'Marque Test VTVUMH', 'name': 'Jean Dupont Test', 'phone': '+33612345678', 'sector': 'Restauration', 'language': 'fr', 'expansion_type': None, 'format': None, 'budget_estimated': None, 'target_city': None, 'timeline': None, 'source': 'audit_test', 'utm_source': None, 'utm_medium': None, 'utm_campaign': None, 'status': 'NEW', 'stage': 'analysis_requested', 'priority': 'B', 'tags': [], 'created_at': '202"
+      },
+      {
+        "test": "Modifier Lead (status)",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:00.550346",
+        "response": "{'message': 'Lead updated successfully'}"
+      },
+      {
+        "test": "Ajouter Note",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:02.199851",
+        "response": "{'message': 'Note added successfully'}"
+      },
+      {
+        "test": "Lire Notes",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:04.123683",
+        "response": "{'notes': [{'id': '697528bca4aac71f1f3f82cc', '_id': '697528bca4aac71f1f3f82cc', 'content': 'Note de test par commercial', 'note_text': 'Note de test par commercial', 'details': 'Note de test par commercial', 'created_at': '2026-01-24T20:17:00.626000', 'created_by': 'commercial.test@igv.co.il', 'user_email': 'commercial.test@igv.co.il'}, {'id': '69752899a4aac71f1f3f82c9', '_id': '69752899a4aac71f1f3f82c9', 'content': 'Lead created by postmaster@israelgrowthventure.com', 'note_text': 'Lead create"
+      },
+      {
+        "test": "Activités Lead",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:17:05.235757",
+        "response": "{'detail': 'Not Found'}"
+      },
+      {
+        "test": "Envoyer Email",
+        "status": "❌ KO",
+        "details": "Code 500",
+        "response_code": 500,
+        "timestamp": "2026-01-24T22:17:09.022629",
+        "response": "{'detail': \"Failed to send email: [SMTPRecipientRefused(556, '5.1.10 <test@example.com> <test@example.com>: Recipient address rejected: Domain example.com does not accept mail (nullMX)', 'test@example.com')]\"}"
+      },
+      {
+        "test": "Convertir en Contact",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:11.505509",
+        "response": "{'contact_id': '697528c5a4aac71f1f3f82cd', 'message': 'Lead converted successfully'}"
+      },
+      {
+        "test": "Créer Opportunité",
+        "status": "✅ OK",
+        "details": "Code 201",
+        "response_code": 201,
+        "timestamp": "2026-01-24T22:17:13.423985",
+        "response": "{'opportunity_id': '697528c7a4aac71f1f3f82cf', 'message': 'Opportunity created successfully'}"
+      }
+    ],
+    "CONTACTS": [
+      {
+        "test": "Liste Contacts",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:15.369740",
+        "response": "{'contacts': [], 'total': 0, 'skip': 0, 'limit': 50}"
+      },
+      {
+        "test": "Détail Contact",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:17.305033",
+        "response": "{'_id': '697528c5a4aac71f1f3f82cd', 'email': 'prospect.test.vtvumh@example.com', 'name': 'Jean Dupont Test', 'phone': '+33612345678', 'language': 'fr', 'tags': [], 'lead_ids': ['69752899a4aac71f1f3f82c8'], 'opportunity_ids': [], 'created_at': '2026-01-24T20:17:09.397000', 'updated_at': '2026-01-24T20:17:09.397000', 'activities': [{'_id': '697528c5a4aac71f1f3f82ce', 'type': 'conversion', 'subject': 'Lead converted to contact', 'description': 'Converted by commercial.test@igv.co.il', 'lead_id': '6"
+      },
+      {
+        "test": "Notes Contact",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:17:18.476417",
+        "response": "{'detail': 'Not Found'}"
+      },
+      {
+        "test": "Activités Contact",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:17:19.608585",
+        "response": "{'detail': 'Not Found'}"
+      },
+      {
+        "test": "Emails Contact",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:17:20.748768",
+        "response": "{'detail': 'Not Found'}"
+      }
+    ],
+    "OPPORTUNITIES": [
+      {
+        "test": "Liste Opportunités",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:22.731484",
+        "response": "{'opportunities': [], 'total': 0}"
+      },
+      {
+        "test": "Détail Opportunité",
+        "status": "❌ KO",
+        "details": "Code 405",
+        "response_code": 405,
+        "timestamp": "2026-01-24T22:17:23.891316",
+        "response": "{'detail': 'Method Not Allowed'}"
+      },
+      {
+        "test": "Modifier Stage",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:26.139196",
+        "response": "{'message': 'Opportunity updated successfully'}"
+      },
+      {
+        "test": "Ajouter Note Opp",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:17:27.306686",
+        "response": "{'detail': 'Not Found'}"
+      },
+      {
+        "test": "Créer Tâche Opp",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:29.373924",
+        "response": "{'success': True, 'task_id': '697528d7a4aac71f1f3f82d1', 'task': {'title': 'Rappeler le client', 'description': 'Relance après proposition', 'assigned_to_email': None, 'lead_id': None, 'contact_id': None, 'opportunity_id': '697528c7a4aac71f1f3f82cf', 'due_date': None, 'priority': 'A', 'created_by_email': 'commercial.test@igv.co.il', 'created_by_id': '69752226a4aac71f1f3f82b8', 'is_completed': False, 'completed_at': None, 'created_at': '2026-01-24T20:17:27.453384+00:00', 'updated_at': '2026-01-24"
+      }
+    ],
+    "PIPELINE": [
+      {
+        "test": "Vue Pipeline",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:33.523303",
+        "response": "{'pipeline': {'analysis_requested': [], 'analysis_sent': [], 'call_scheduled': [], 'qualification': [{'_id': '69640fa722a9d6f85a9fd76b', 'name': 'Opportunité - test8', 'lead_id': '69636ce27a791a363a13b993', 'contact_id': None, 'value': 100000.0, 'stage': 'qualification', 'probability': 25, 'expected_close_date': '2026-02-10T00:00:00', 'owner_id': '6959ff90c0ae99e54ef6174e', 'owner_email': 'postmaster@israelgrowthventure.com', 'is_closed': False, 'is_won': False, 'created_at': '2026-01-11T21:01:2"
+      },
+      {
+        "test": "Configuration Stages",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:35.316525",
+        "response": "{'stages': [{'key': 'analysis_requested', 'label_fr': 'Analyse demandֳ©e', 'label_en': 'Analysis requested', 'label_he': '׳\\xa0׳™׳×׳•׳— ׳”׳×׳‘׳§׳©'}, {'key': 'analysis_sent', 'label_fr': 'Analyse envoyֳ©e', 'label_en': 'Analysis sent', 'label_he': '׳\\xa0׳™׳×׳•׳— ׳\\xa0׳©׳\\x9c׳—'}, {'key': 'call_scheduled', 'label_fr': 'Appel planifiֳ©', 'label_en': 'Call scheduled', 'label_he': '׳©׳™׳—׳” ׳\\x9e׳×׳•׳–׳\\x9e׳\\xa0׳×'}, {'key': 'qualification', 'label_fr': 'Qualification', 'label_en': 'Qualification', "
+      },
+      {
+        "test": "Déplacer Opp (Drag&Drop)",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:37.545479",
+        "response": "{'message': 'Opportunity updated successfully'}"
+      }
+    ],
+    "ACTIVITIES": [
+      {
+        "test": "Liste Activités",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:39.822824",
+        "response": "{'activities': [{'_id': '697528dfa4aac71f1f3f82d3', 'type': 'stage_change', 'subject': 'Opportunity updated', 'description': 'Stage changed to negotiation', 'opportunity_id': '697528c7a4aac71f1f3f82cf', 'user_id': '69752226a4aac71f1f3f82b8', 'user_email': 'commercial.test@igv.co.il', 'metadata': {'changes': {'stage': 'negotiation', 'updated_at': '2026-01-24T20:17:35.663000'}}, 'created_at': '2026-01-24T20:17:35.948000'}, {'_id': '697528d4a4aac71f1f3f82d0', 'type': 'stage_change', 'subject': 'Opp"
+      },
+      {
+        "test": "Activités type=note",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:42.005787",
+        "response": "{'activities': [{'_id': '697528bca4aac71f1f3f82cc', 'type': 'note', 'subject': 'Note added', 'description': 'Note de test par commercial', 'note_text': 'Note de test par commercial', 'lead_id': '69752899a4aac71f1f3f82c8', 'user_id': '69752226a4aac71f1f3f82b8', 'user_email': 'commercial.test@igv.co.il', 'created_by': 'commercial.test@igv.co.il', 'metadata': {}, 'created_at': '2026-01-24T20:17:00.626000'}, {'_id': '69752899a4aac71f1f3f82c9', 'type': 'note', 'subject': 'Lead created', 'description'"
+      },
+      {
+        "test": "Activités type=email",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:44.061302",
+        "response": "{'activities': [], 'total': 0, 'skip': 0, 'limit': 50}"
+      },
+      {
+        "test": "Activités type=status_change",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:45.973108",
+        "response": "{'activities': [{'_id': '697528baa4aac71f1f3f82cb', 'type': 'status_change', 'subject': 'Lead updated', 'description': 'Status/stage changed by commercial.test@igv.co.il', 'lead_id': '69752899a4aac71f1f3f82c8', 'user_id': '69752226a4aac71f1f3f82b8', 'user_email': 'commercial.test@igv.co.il', 'metadata': {'changes': {'status': 'CONTACTED', 'updated_at': '2026-01-24T20:16:58.725000'}}, 'created_at': '2026-01-24T20:16:58.980000'}, {'_id': '69543f3e7e903f5f15cbd734', 'type': 'status_change', 'subjec"
+      },
+      {
+        "test": "Activités type=assignment",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:47.917922",
+        "response": "{'activities': [{'_id': '6975289ea4aac71f1f3f82ca', 'type': 'assignment', 'subject': 'Lead assigned', 'description': 'Lead assigned from unassigned to commercial.test@igv.co.il by postmaster@israelgrowthventure.com', 'lead_id': '69752899a4aac71f1f3f82c8', 'user_id': '6959ff90c0ae99e54ef6174e', 'user_email': 'postmaster@israelgrowthventure.com', 'metadata': {'from': None, 'to': 'commercial.test@igv.co.il'}, 'created_at': '2026-01-24T20:16:30.869000'}], 'total': 1, 'skip': 0, 'limit': 50}"
+      }
+    ],
+    "EMAILS": [
+      {
+        "test": "Templates Emails",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:49.498360",
+        "response": "{'templates': [{'_id': '695c3eb311092d68173f09c7', 'name': \"Premier contact - Demande d'information\", 'subject': \"Votre projet d'expansion en Israël - Israel Growth Venture\", 'body': \"Bonjour,\\n\\nSuite à votre demande concernant votre projet d'expansion en Israël, je me permets de vous contacter.\\n\\nChez Israel Growth Venture, nous accompagnons les marques dans leur développement sur le marché israélien, de l'analyse préliminaire jusqu'à l'ouverture effective.\\n\\nJe serais ravi d'échanger avec v"
+      },
+      {
+        "test": "Templates langue=fr",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:51.219964",
+        "response": "{'templates': [{'_id': '695c3eb311092d68173f09c7', 'name': \"Premier contact - Demande d'information\", 'subject': \"Votre projet d'expansion en Israël - Israel Growth Venture\", 'body': \"Bonjour,\\n\\nSuite à votre demande concernant votre projet d'expansion en Israël, je me permets de vous contacter.\\n\\nChez Israel Growth Venture, nous accompagnons les marques dans leur développement sur le marché israélien, de l'analyse préliminaire jusqu'à l'ouverture effective.\\n\\nJe serais ravi d'échanger avec v"
+      },
+      {
+        "test": "Templates langue=en",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:52.905851",
+        "response": "{'templates': [{'_id': '697304d4012277fcb6fa6f11', 'name': 'First Contact - Information Request', 'subject': 'Your expansion project in Israel - Israel Growth Venture', 'body': 'Hello {{name}},\\n\\nThank you for your interest in the Israeli market!\\n\\nWe have received your inquiry regarding {{brand}}.\\n\\nAn expert from our team will contact you within 24 hours to discuss your expansion project.\\n\\nBest regards,\\nThe Israel Growth Venture team', 'language': 'en', 'category': 'contact', 'variables'"
+      },
+      {
+        "test": "Templates langue=he",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:54.534180",
+        "response": "{'templates': [{'_id': '697304d4012277fcb6fa6f12', 'name': 'יצירת קשר ראשונה - בקשת מידע', 'subject': 'פרויקט ההתרחבות שלכם בישראל - Israel Growth Venture', 'body': 'שלום {{name}},\\n\\nתודה על ההתעניינות שלכם בשוק הישראלי!\\n\\nקיבלנו את הפנייה שלכם בנוגע ל-{{brand}}.\\n\\nמומחה מהצוות שלנו ייצור איתכם קשר תוך 24 שעות לדון בפרויקט ההתרחבות.\\n\\nבברכה,\\nצוות Israel Growth Venture', 'language': 'he', 'category': 'contact', 'variables': ['name', 'brand'], 'created_by': 'system', 'created_at': '2026-01-23"
+      },
+      {
+        "test": "Historique Emails",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:56.188692",
+        "response": "{'emails': [], 'total': 0}"
+      }
+    ],
+    "TASKS": [
+      {
+        "test": "Liste Tâches",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:17:58.330194",
+        "response": "{'tasks': [{'_id': '697528d7a4aac71f1f3f82d1', 'title': 'Rappeler le client', 'description': 'Relance après proposition', 'assigned_to_email': None, 'lead_id': None, 'contact_id': None, 'opportunity_id': '697528c7a4aac71f1f3f82cf', 'due_date': None, 'priority': 'A', 'created_by_email': 'commercial.test@igv.co.il', 'created_by_id': '69752226a4aac71f1f3f82b8', 'is_completed': False, 'completed_at': None, 'created_at': '2026-01-24T20:17:27.453000', 'updated_at': '2026-01-24T20:17:27.453000'}, {'_id"
+      },
+      {
+        "test": "Tâches Ouvertes",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:00.518224",
+        "response": "{'tasks': [{'_id': '697528d7a4aac71f1f3f82d1', 'title': 'Rappeler le client', 'description': 'Relance après proposition', 'assigned_to_email': None, 'lead_id': None, 'contact_id': None, 'opportunity_id': '697528c7a4aac71f1f3f82cf', 'due_date': None, 'priority': 'A', 'created_by_email': 'commercial.test@igv.co.il', 'created_by_id': '69752226a4aac71f1f3f82b8', 'is_completed': False, 'completed_at': None, 'created_at': '2026-01-24T20:17:27.453000', 'updated_at': '2026-01-24T20:17:27.453000'}, {'_id"
+      },
+      {
+        "test": "Mes Tâches",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:02.735596",
+        "response": "{'tasks': [], 'total': 0, 'overdue_count': 0, 'skip': 0, 'limit': 100}"
+      },
+      {
+        "test": "Terminer Tâche",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:04.938264",
+        "response": "{'success': True, 'message': 'Task updated'}"
+      }
+    ],
+    "ADMIN": [
+      {
+        "test": "Liste Utilisateurs",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:06.639616",
+        "response": "{'users': [{'_id': '69752298a4aac71f1f3f82ba', 'email': 'admin@igv.co.il', 'name': 'שלהבת אדר', 'first_name': 'שלהבת', 'last_name': 'אדר', 'role': 'commercial', 'is_active': True, 'is_verified': True, 'language': 'fr', 'created_at': '2026-01-24T19:50:48.698000', 'updated_at': '2026-01-24T19:50:48.698000', 'created_by_id': '6959ff90c0ae99e54ef6174e', 'last_login': '2026-01-24T19:55:35.925000'}, {'_id': '69752226a4aac71f1f3f82b8', 'email': 'commercial.test@igv.co.il', 'name': 'Commercial Test', 'f"
+      },
+      {
+        "test": "Liste Tags",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:08.290067",
+        "response": "{'tags': ['hot', 'cold', 'follow-up', 'qualified']}"
+      },
+      {
+        "test": "Stages Pipeline",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:10.069975",
+        "response": "{'stages': [{'key': 'analysis_requested', 'label_fr': 'Analyse demandֳ©e', 'label_en': 'Analysis requested', 'label_he': '׳\\xa0׳™׳×׳•׳— ׳”׳×׳‘׳§׳©'}, {'key': 'analysis_sent', 'label_fr': 'Analyse envoyֳ©e', 'label_en': 'Analysis sent', 'label_he': '׳\\xa0׳™׳×׳•׳— ׳\\xa0׳©׳\\x9c׳—'}, {'key': 'call_scheduled', 'label_fr': 'Appel planifiֳ©', 'label_en': 'Call scheduled', 'label_he': '׳©׳™׳—׳” ׳\\x9e׳×׳•׳–׳\\x9e׳\\xa0׳×'}, {'key': 'qualification', 'label_fr': 'Qualification', 'label_en': 'Qualification', "
+      },
+      {
+        "test": "Dashboard Stats",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:13.988405",
+        "response": "{'leads': {'today': 3, 'last_7_days': 3, 'last_30_days': 116, 'total': 117}, 'opportunities': {'open': 3, 'won': 0, 'pipeline_value': 110000.0}, 'tasks': {'overdue': 0}, 'top_sources': [{'source': None, 'count': 116}], 'stage_distribution': [{'stage': 'analysis_requested', 'count': 66}, {'stage': None, 'count': 51}]}"
+      },
+      {
+        "test": "Export CSV Leads",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:18.264688",
+        "response": "{'csv': 'email,brand_name,name,phone,status,stage,priority,sector,expansion_type,target_city,language,created_at\\r\\nprospect.test.vtvumh@example.com,Marque Test VTVUMH,Jean Dupont Test,+33612345678,CONVERTED,analysis_requested,B,Restauration,,,fr,2026-01-24T20:16:25.392000\\r\\nprospect.workflow.20260124220355@test.com,Test Brand SARL,,+33612345678,NEW,analysis_requested,B,retail,,,fr,2026-01-24T20:03:56.347000\\r\\ntest.complet@test.com,Test Brand,,+33600000000,NEW,analysis_requested,B,retail,,,fr,"
+      },
+      {
+        "test": "Leads Non Assignés",
+        "status": "✅ OK",
+        "details": "Code 200",
+        "response_code": 200,
+        "timestamp": "2026-01-24T22:18:22.256003",
+        "response": "{'leads': [{'_id': '69752899a4aac71f1f3f82c8', 'email': 'prospect.test.vtvumh@example.com', 'brand_name': 'Marque Test VTVUMH', 'name': 'Jean Dupont Test', 'phone': '+33612345678', 'sector': 'Restauration', 'language': 'fr', 'expansion_type': None, 'format': None, 'budget_estimated': None, 'target_city': None, 'timeline': None, 'source': 'audit_test', 'utm_source': None, 'utm_medium': None, 'utm_campaign': None, 'status': 'CONVERTED', 'stage': 'analysis_requested', 'priority': 'B', 'tags': [], '"
+      },
+      {
+        "test": "Performance Commercial",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:18:23.503140",
+        "response": "{'detail': 'Not Found'}"
+      },
+      {
+        "test": "Stats Conversions",
+        "status": "❌ KO",
+        "details": "Code 404",
+        "response_code": 404,
+        "timestamp": "2026-01-24T22:18:24.585753",
+        "response": "{'detail': 'Not Found'}"
+      }
+    ],
+    "RBAC": [
+      {
+        "test": "Commercial → Liste Users",
+        "status": "✅ OK",
+        "details": "Code 403",
+        "response_code": 403,
+        "timestamp": "2026-01-24T22:18:25.953782",
+        "response": "{'detail': 'Access denied. Required role: admin. Your role: commercial'}"
+      },
+      {
+        "test": "Commercial → Créer User",
+        "status": "✅ OK",
+        "details": "Code 403",
+        "response_code": 403,
+        "timestamp": "2026-01-24T22:18:27.317699",
+        "response": "{'detail': 'Access denied. Required role: admin. Your role: commercial'}"
+      },
+      {
+        "test": "Commercial → Assigner Lead",
+        "status": "✅ OK",
+        "details": "Code 403",
+        "response_code": 403,
+        "timestamp": "2026-01-24T22:18:28.732533",
+        "response": "{'detail': 'Access denied. Required role: admin. Your role: commercial'}"
+      }
+    ],
+    "FRONTEND": [
+      {
+        "test": "Routes principales existantes",
+        "status": "✅ OK",
+        "details": "Vérifié dans App.js",
+        "response_code": null,
+        "timestamp": "2026-01-24T22:18:28.735796"
+      }
+    ],
+    "DISPATCH": [
+      {
+        "test": "Leads Non Assignés (API dédiée)",
+        "status": "❌ KO",
+        "details": "Code 400",
+        "response_code": 400,
+        "timestamp": "2026-01-24T22:18:30.183360",
+        "response": "{'detail': 'Invalid lead ID'}"
+      },
+      {
+        "test": "Assignation en masse",
+        "status": "❌ KO",
+        "details": "Code 405",
+        "response_code": 405,
+        "timestamp": "2026-01-24T22:18:31.297328",
+        "response": "{'detail': 'Method Not Allowed'}"
+      }
+    ]
+  },
+  "erreurs_critiques": [],
+  "erreurs_mineures": [],
+  "fonctionnalites_manquantes": [
+    "GET /api/crm/stats/commercial-performance - Endpoint inexistant",
+    "POST /api/crm/opportunities/{id}/notes - Endpoint inexistant",
+    "API: POST /api/admin/logout - Déconnexion",
+    "GET /api/crm/contacts/{id}/emails - Endpoint inexistant",
+    "GET /api/crm/stats/conversions - Endpoint inexistant",
+    "POST /api/admin/logout - Endpoint inexistant",
+    "API: GET /api/crm/contacts/{id}/activities - Activités par contact",
+    "FRONTEND: Page /admin/crm/opportunities/:id - Fiche opportunité dédiée ABSENTE",
+    "GET /api/crm/contacts/{id}/activities - Endpoint inexistant",
+    "API: GET /api/crm/contacts/{id}/emails - Emails par contact",
+    "GET /api/crm/contacts/{id}/notes - Endpoint inexistant",
+    "FRONTEND: LeadDetail.js - Bouton 'Attribuer à un commercial' ABSENT",
+    "FRONTEND: Dashboard Admin - Widget 'Leads à dispatcher' ABSENT",
+    "API: GET /api/crm/stats/commercial-performance - Stats performance",
+    "API: POST /api/crm/opportunities/{id}/notes - Notes opportunité",
+    "API: GET /api/crm/stats/conversions - Stats conversions",
+    "POST /api/crm/leads/batch-assign - Assignation en masse inexistante",
+    "GET /api/crm/leads/{id}/activities - Endpoint inexistant",
+    "FRONTEND: Dashboard Admin - Widget 'Leads urgents' ABSENT",
+    "API: GET /api/crm/opportunities/{id} - Détail opportunité",
+    "FRONTEND: Dashboard Commercial - Vue 'Mes leads' seulement ABSENT",
+    "GET /api/crm/leads/unassigned - API dispatch dédiée inexistante",
+    "GET /api/crm/opportunities/{id} - Endpoint inexistant",
+    "API: GET /api/crm/contacts/{id}/notes - Notes par contact",
+    "API: GET /api/crm/leads/{id}/activities - Activités par lead"
+  ]
+}
