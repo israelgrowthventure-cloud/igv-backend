@@ -39,7 +39,7 @@ passlib==1.7.4
 pathspec==0.12.1
 platformdirs==4.5.0
 pluggy==1.6.0
-pyasn1==0.6.1
+pyasn1==0.6.2
 pycodestyle==2.14.0
 pycparser==2.23
 pydantic==2.12.4
@@ -47,7 +47,7 @@ pydantic_core==2.41.5
 pyflakes==3.4.0
 Pygments==2.19.2
 PyJWT==2.10.1
-pymongo==4.5.0
+pymongo==4.6.3
 pytest==8.4.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
@@ -76,3 +76,4 @@ tzdata==2025.2
 urllib3==2.5.0
 uvicorn==0.25.0
 watchfiles==1.1.1
+pillow>=10.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
