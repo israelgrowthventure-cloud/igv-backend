@@ -55,6 +55,16 @@ from search_rbac_routes import router as search_rbac_router  # Points 7-8: Globa
 from email_export_routes import router as email_export_router  # Points 9, 11: Emails, Exports
 from mini_analysis_audit_routes import router as mini_audit_router  # Points 10, 12: Mini-Analysis, Audit
 
+# API Bridge for legacy route compatibility
+try:
+    from api_bridge import router as api_bridge_router
+    API_BRIDGE_LOADED = True
+    logging.info("✓ API Bridge router loaded successfully")
+except Exception as e:
+    logging.error(f"✗ Failed to load api_bridge: {e}")
+    API_BRIDGE_LOADED = False
+    api_bridge_router = None
+
 # Email templates seed router
 try:
     from email_templates_seed import router as email_templates_seed_router
@@ -1003,6 +1013,13 @@ app.include_router(quota_router)  # Gemini Quota Queue
 app.include_router(tracking_router)  # Tracking & Analytics
 app.include_router(admin_router)  # Admin Dashboard & Stats (includes logout)
 # app.include_router(crm_missing_router)  # DISABLED - merged into crm_additional_routes
+
+# API Bridge for legacy route compatibility
+if API_BRIDGE_LOADED and api_bridge_router:
+    app.include_router(api_bridge_router)
+    logging.info("✓ API Bridge router registered - legacy routes enabled")
+else:
+    logging.warning("✗ API Bridge router not registered (import failed)")
 
 # Phase 5: CMS, Media Library & Password Recovery
 try:
