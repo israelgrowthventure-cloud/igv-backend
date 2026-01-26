@@ -36,17 +36,13 @@ except ImportError as e:
 from ai_routes import router as ai_router
 from mini_analysis_routes import router as mini_analysis_router
 from extended_routes import router as extended_router
-# from crm_routes import router as crm_router  # DISABLED - duplicate with crm_complete_routes
 from tracking_routes import router as tracking_router
 from admin_routes import router as admin_router
-from crm_complete_routes import router as crm_complete_router
-from crm_additional_routes import router as crm_additional_router
 from companies_routes import router as companies_router
 from gdpr_routes import router as gdpr_router
 from quota_queue_routes import router as quota_router
 from admin_user_routes import router as admin_user_router
 from cms_routes import router as cms_router  # Phase 5: CMS, Media & Auth
-# from crm_missing_routes import router as crm_missing_router  # DISABLED - merged into crm_additional_routes
 
 # Mission 12 Points - Advanced CRM Features
 from quality_routes import router as quality_router  # Point 2: Quality/Duplicates
@@ -54,6 +50,10 @@ from automation_kpi_routes import router as automation_kpi_router  # Points 3-6:
 from search_rbac_routes import router as search_rbac_router  # Points 7-8: Global Search, RBAC
 from email_export_routes import router as email_export_router  # Points 9, 11: Emails, Exports
 from mini_analysis_audit_routes import router as mini_audit_router  # Points 10, 12: Mini-Analysis, Audit
+
+# ===== PHASE 2: UNIFIED CRM ROUTER =====
+# ALL CRM routes centralized in app/routers/crm/main.py
+from app.routers.crm.main import router as crm_unified_router
 
 # API Bridge for legacy route compatibility
 try:
@@ -998,9 +998,9 @@ app.include_router(api_router)
 app.include_router(ai_router)  # AI Insight generation
 app.include_router(mini_analysis_router)  # Mini-Analysis with Gemini
 app.include_router(extended_router)  # Extended features: PDF, Calendar, Contact Expert
-# app.include_router(crm_router)  # DISABLED - duplicate with crm_complete_routes
-app.include_router(crm_complete_router)  # CRM Complete (MVP) - ONLY CRM router now
-app.include_router(crm_additional_router)  # CRM Additional Routes - Phase 2 Fix (includes assign endpoint)
+# ===== PHASE 2: CRM UNIFIED ROUTER (replaces old CRM routers) =====
+app.include_router(crm_unified_router)  # ALL CRM routes centralized in app/routers/crm/main.py
+# OLD CRM routers REMOVED: crm_complete_router, crm_additional_router (now in app/routers/crm/main.py)
 app.include_router(companies_router)  # CRM Companies/Sociétés (B2B) - Point 1 Mission
 app.include_router(quality_router)  # Point 2: Quality/Duplicates detection & merge
 app.include_router(automation_kpi_router)  # Points 3-6: Automation, Next Action, KPIs, Sources
@@ -1012,7 +1012,6 @@ app.include_router(gdpr_router)  # GDPR Consent & Privacy
 app.include_router(quota_router)  # Gemini Quota Queue
 app.include_router(tracking_router)  # Tracking & Analytics
 app.include_router(admin_router)  # Admin Dashboard & Stats (includes logout)
-# app.include_router(crm_missing_router)  # DISABLED - merged into crm_additional_routes
 
 # API Bridge for legacy route compatibility
 if API_BRIDGE_LOADED and api_bridge_router:
