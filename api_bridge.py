@@ -16,7 +16,7 @@ Date: 26 Janvier 2026
 """
 
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime, timezone
 import logging
 import uuid
@@ -71,11 +71,25 @@ ROUTE_ALIASES = {
 
 
 def log_legacy_route(original_path: str, canonical_path: str, method: str = "GET"):
-    """Log when a legacy route is used"""
-    logger.warning(
-        f"LEGACY_ROUTE_USED: {method} {original_path} -> {canonical_path} "
-        f"[timestamp={datetime.now(timezone.utc).isoformat()}]"
-    )
+    """
+    Log when a legacy route is used.
+    VERY VISIBLE logging to track bridge usage.
+    """
+    timestamp = datetime.now(timezone.utc).isoformat()
+    
+    # === BRIDGE_USED INDICATOR (highly visible) ===
+    logger.warning("=" * 60)
+    logger.warning(f"⚠️  BRIDGE_USED")
+    logger.warning(f"    Method: {method}")
+    logger.warning(f"    Old: {original_path}")
+    logger.warning(f"    New: {canonical_path}")
+    logger.warning(f"    Time: {timestamp}")
+    logger.warning("=" * 60)
+    
+    # Also print to console for maximum visibility
+    print(f"\n{'='*60}")
+    print(f"⚠️  BRIDGE_USED: {method} {original_path} -> {canonical_path}")
+    print(f"{'='*60}\n")
 
 
 def generate_error_id() -> str:
@@ -90,6 +104,29 @@ def log_and_raise_error(context: str, exc: Exception) -> None:
     raise HTTPException(
         status_code=500,
         detail=f"Internal error. Reference: {error_id}"
+    )
+
+
+def bridge_response(data: Any, original_path: str, canonical_path: str):
+    """
+    Wrap response with X-Bridge headers to indicate bridge usage.
+    Returns JSONResponse with bridge indicator headers.
+    """
+    from fastapi.responses import JSONResponse
+    
+    # If data is already a dict, use it directly
+    if isinstance(data, dict):
+        content = data
+    else:
+        content = {"data": data}
+    
+    return JSONResponse(
+        content=content,
+        headers={
+            "X-Bridge": "1",
+            "X-Bridge-From": original_path,
+            "X-Bridge-To": canonical_path,
+        }
     )
 
 
@@ -115,7 +152,8 @@ async def legacy_login(request: Request):
     try:
         body = await request.json()
         credentials = AdminLoginRequest(**body)
-        return await admin_login(credentials)
+        result = await admin_login(credentials)
+        return bridge_response(result, "/api/login", "/api/admin/login")
     except HTTPException:
         raise
     except Exception as e:
@@ -132,7 +170,8 @@ async def legacy_auth_login(request: Request):
     try:
         body = await request.json()
         credentials = AdminLoginRequest(**body)
-        return await admin_login(credentials)
+        result = await admin_login(credentials)
+        return bridge_response(result, "/api/auth/login", "/api/admin/login")
     except HTTPException:
         raise
     except Exception as e:
@@ -152,7 +191,8 @@ async def legacy_stats(user: Dict = Depends(get_current_user)):
     log_legacy_route("/api/stats", "/api/admin/stats", "GET")
     
     try:
-        return await get_stats(user)
+        result = await get_stats(user)
+        return bridge_response(result, "/api/stats", "/api/admin/stats")
     except HTTPException:
         raise
     except Exception as e:
@@ -168,7 +208,8 @@ async def legacy_crm_stats(user: Dict = Depends(get_current_user)):
     log_legacy_route("/api/crm/stats", "/api/crm/dashboard/stats", "GET")
     
     try:
-        return await get_dashboard_stats(user)
+        result = await get_dashboard_stats(user)
+        return bridge_response(result, "/api/crm/stats", "/api/crm/dashboard/stats")
     except HTTPException:
         raise
     except Exception as e:
@@ -187,7 +228,8 @@ async def legacy_automation_list(user: Dict = Depends(require_admin)):
     log_legacy_route("/api/crm/automation", "/api/crm/rules", "GET")
     
     try:
-        return await list_automation_rules(user)
+        result = await list_automation_rules(user)
+        return bridge_response(result, "/api/crm/automation", "/api/crm/rules")
     except HTTPException:
         raise
     except Exception as e:
@@ -202,7 +244,8 @@ async def legacy_automation_rules_list(user: Dict = Depends(require_admin)):
     log_legacy_route("/api/crm/automation/rules", "/api/crm/rules", "GET")
     
     try:
-        return await list_automation_rules(user)
+        result = await list_automation_rules(user)
+        return bridge_response(result, "/api/crm/automation/rules", "/api/crm/rules")
     except HTTPException:
         raise
     except Exception as e:
@@ -221,7 +264,8 @@ async def legacy_automation_rules_create(
     
     try:
         body = await request.json()
-        return await create_automation_rule(body, user)
+        result = await create_automation_rule(body, user)
+        return bridge_response(result, "/api/crm/automation/rules", "/api/crm/rules")
     except HTTPException:
         raise
     except Exception as e:
@@ -241,7 +285,8 @@ async def legacy_automation_rules_update(
     
     try:
         body = await request.json()
-        return await update_automation_rule(rule_id, body, user)
+        result = await update_automation_rule(rule_id, body, user)
+        return bridge_response(result, f"/api/crm/automation/rules/{rule_id}", f"/api/crm/rules/{rule_id}")
     except HTTPException:
         raise
     except Exception as e:
@@ -259,7 +304,8 @@ async def legacy_automation_rules_delete(
     log_legacy_route(f"/api/crm/automation/rules/{rule_id}", f"/api/crm/rules/{rule_id}", "DELETE")
     
     try:
-        return await delete_automation_rule(rule_id, user)
+        result = await delete_automation_rule(rule_id, user)
+        return bridge_response(result, f"/api/crm/automation/rules/{rule_id}", f"/api/crm/rules/{rule_id}")
     except HTTPException:
         raise
     except Exception as e:
@@ -274,7 +320,8 @@ async def legacy_automation_execute(user: Dict = Depends(require_admin)):
     log_legacy_route("/api/crm/automation/execute", "/api/crm/rules/execute", "POST")
     
     try:
-        return await execute_automation_rules(user)
+        result = await execute_automation_rules(user)
+        return bridge_response(result, "/api/crm/automation/execute", "/api/crm/rules/execute")
     except HTTPException:
         raise
     except Exception as e:
@@ -301,7 +348,8 @@ async def legacy_audit_list(
     log_legacy_route("/api/crm/audit", "/api/crm/audit-logs", "GET")
     
     try:
-        return await list_audit_logs(entity_type, entity_id, user_email, action, limit, skip, user)
+        result = await list_audit_logs(entity_type, entity_id, user_email, action, limit, skip, user)
+        return bridge_response(result, "/api/crm/audit", "/api/crm/audit-logs")
     except HTTPException:
         raise
     except Exception as e:
@@ -316,7 +364,8 @@ async def legacy_audit_stats(user: Dict = Depends(require_admin)):
     log_legacy_route("/api/crm/audit/stats", "/api/crm/audit-logs/stats", "GET")
     
     try:
-        return await get_audit_stats(user)
+        result = await get_audit_stats(user)
+        return bridge_response(result, "/api/crm/audit/stats", "/api/crm/audit-logs/stats")
     except HTTPException:
         raise
     except Exception as e:
@@ -339,7 +388,8 @@ async def legacy_audit_entity(
     )
     
     try:
-        return await get_entity_audit_history(entity_type, entity_id, user)
+        result = await get_entity_audit_history(entity_type, entity_id, user)
+        return bridge_response(result, f"/api/crm/audit/entity/{entity_type}/{entity_id}", f"/api/crm/audit-logs/entity/{entity_type}/{entity_id}")
     except HTTPException:
         raise
     except Exception as e:
@@ -362,7 +412,8 @@ async def legacy_audit_user(
     )
     
     try:
-        return await get_user_activity_log(user_email, None, limit, user)
+        result = await get_user_activity_log(user_email, None, limit, user)
+        return bridge_response(result, f"/api/crm/audit/user/{user_email}", f"/api/crm/audit-logs/user/{user_email}")
     except HTTPException:
         raise
     except Exception as e:
@@ -381,7 +432,8 @@ async def legacy_roles_list(user: Dict = Depends(require_admin)):
     log_legacy_route("/api/crm/roles", "/api/crm/rbac/roles", "GET")
     
     try:
-        return await list_roles(user)
+        result = await list_roles(user)
+        return bridge_response(result, "/api/crm/roles", "/api/crm/rbac/roles")
     except HTTPException:
         raise
     except Exception as e:
@@ -396,7 +448,8 @@ async def legacy_permissions(user: Dict = Depends(get_current_user)):
     log_legacy_route("/api/crm/permissions", "/api/crm/rbac/permissions", "GET")
     
     try:
-        return await get_user_permissions(user)
+        result = await get_user_permissions(user)
+        return bridge_response(result, "/api/crm/permissions", "/api/crm/rbac/permissions")
     except HTTPException:
         raise
     except Exception as e:
@@ -416,7 +469,8 @@ async def legacy_update_user_role(
     
     try:
         body = await request.json()
-        return await update_user_role(user_id, body, user)
+        result = await update_user_role(user_id, body, user)
+        return bridge_response(result, f"/api/crm/users/{user_id}/role", f"/api/crm/rbac/users/{user_id}/role")
     except HTTPException:
         raise
     except Exception as e:
@@ -439,7 +493,8 @@ async def legacy_duplicates_leads(
     log_legacy_route("/api/crm/duplicates/leads", "/api/crm/quality/duplicates/leads", "GET")
     
     try:
-        return await detect_lead_duplicates(threshold, limit, user)
+        result = await detect_lead_duplicates(threshold, limit, user)
+        return bridge_response(result, "/api/crm/duplicates/leads", "/api/crm/quality/duplicates/leads")
     except HTTPException:
         raise
     except Exception as e:
@@ -458,7 +513,8 @@ async def legacy_duplicates_contacts(
     log_legacy_route("/api/crm/duplicates/contacts", "/api/crm/quality/duplicates/contacts", "GET")
     
     try:
-        return await detect_contact_duplicates(threshold, limit, user)
+        result = await detect_contact_duplicates(threshold, limit, user)
+        return bridge_response(result, "/api/crm/duplicates/contacts", "/api/crm/quality/duplicates/contacts")
     except HTTPException:
         raise
     except Exception as e:
@@ -477,7 +533,8 @@ async def legacy_team_list(user: Dict = Depends(get_current_user)):
     log_legacy_route("/api/crm/team", "/api/crm/settings/users", "GET")
     
     try:
-        return await get_crm_users(user)
+        result = await get_crm_users(user)
+        return bridge_response(result, "/api/crm/team", "/api/crm/settings/users")
     except HTTPException:
         raise
     except Exception as e:
@@ -492,7 +549,8 @@ async def legacy_crm_users(user: Dict = Depends(get_current_user)):
     log_legacy_route("/api/crm/users", "/api/crm/settings/users", "GET")
     
     try:
-        return await get_crm_users(user)
+        result = await get_crm_users(user)
+        return bridge_response(result, "/api/crm/users", "/api/crm/settings/users")
     except HTTPException:
         raise
     except Exception as e:
