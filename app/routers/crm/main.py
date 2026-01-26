@@ -450,6 +450,14 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
+        # Check if lead with this email already exists
+        existing_lead = await current_db.leads.find_one({"email": lead_data.email})
+        if existing_lead:
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Lead with email {lead_data.email} already exists"
+            )
+        
         lead_dict = lead_data.dict(exclude_none=True)
         new_lead = {
             **lead_dict,
@@ -465,18 +473,23 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
         result = await current_db.leads.insert_one(new_lead)
         
         # Log activity (with safe user id access)
-        await log_audit_event(
-            current_db,
-            user_id=user.get("id", user.get("_id", "")),
-            user_email=user["email"],
-            action="lead_created",
-            resource_type="lead",
-            resource_id=str(result.inserted_id),
-            details={"email": lead_data.email, "brand_name": lead_data.brand_name}
-        )
+        try:
+            await log_audit_event(
+                current_db,
+                user_id=user.get("id", user.get("_id", "")),
+                user_email=user["email"],
+                action="lead_created",
+                resource_type="lead",
+                resource_id=str(result.inserted_id),
+                details={"email": lead_data.email, "brand_name": lead_data.brand_name}
+            )
+        except Exception as audit_error:
+            logging.warning(f"Failed to log audit event: {audit_error}")
         
-        return {"message": "Lead created successfully", "lead_id": str(result.inserted_id)}
+        return {"message": "Lead created successfully", "lead_id": str(result.inserted_id), "status": "created"}
         
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error creating lead: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

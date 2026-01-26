@@ -1147,10 +1147,10 @@ async def startup_db_init():
             # Leads indexes
             await db.leads.create_index("created_at", background=True)
             await db.leads.create_index("status", background=True)
-            await db.leads.create_index("email", background=True)
+            await db.leads.create_index([("email", 1)], unique=True, background=True, sparse=True)
             await db.leads.create_index("stage", background=True)
             # Contacts indexes
-            await db.contacts.create_index("email", background=True)
+            await db.contacts.create_index([("email", 1)], unique=True, background=True, sparse=True)
             await db.contacts.create_index("name", background=True)
             await db.contacts.create_index("created_at", background=True)
             # Opportunities indexes  
