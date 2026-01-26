@@ -1041,6 +1041,10 @@ app.get("/api/crm/pipeline")(get_pipeline_view)
 app.get("/api/crm/activities")(get_activities)
 app.get("/api/crm/emails/history")(get_email_history)
 
+# Mini-Analyses Stats (fallback to mini_audit_router)
+from mini_analysis_audit_routes import get_mini_analysis_stats as ma_stats
+app.get("/api/crm/mini-analyses/stats")(ma_stats)
+
 # Include the routers in the main app
 app.include_router(api_router)
 app.include_router(ai_router)  # AI Insight generation
