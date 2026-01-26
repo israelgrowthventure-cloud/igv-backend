@@ -859,11 +859,35 @@ async def admin_login(credentials: AdminLoginRequest):
     }
 
 @api_router.get("/admin/verify")
-async def verify_admin_token(user: Dict = Depends(get_current_user)):
+async def verify_admin_token_endpoint(user: Dict = Depends(get_current_user)):
     """Verify admin JWT token and return user info"""
+    # Get name from user object or fetch from database
+    user_name = user.get('name')
+    if not user_name and db:
+        try:
+            db_user = await db.crm_users.find_one({"email": user['email']})
+            if not db_user:
+                db_user = await db.users.find_one({"email": user['email']})
+            if db_user:
+                user_name = db_user.get('name') or db_user.get('first_name', '') + ' ' + db_user.get('last_name', '')
+                user_name = user_name.strip()
+        except:
+            pass
+    
+    if not user_name:
+        user_name = user['email'].split('@')[0]
+    
     return {
+        # Flat response (legacy)
         "email": user['email'],
-        "role": user['role']
+        "role": user['role'],
+        "name": user_name,
+        # Wrapped response (frontend expected)
+        "user": {
+            "email": user['email'],
+            "role": user['role'],
+            "name": user_name
+        }
     }
 
 @api_router.get("/admin/contacts")

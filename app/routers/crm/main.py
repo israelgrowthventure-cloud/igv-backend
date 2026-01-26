@@ -273,16 +273,58 @@ async def get_dashboard_stats(user: Dict = Depends(get_current_user)):
         recent_leads_filter = {**user_filter, "created_at": {"$gte": seven_days_ago}}
         recent_leads = await current_db.leads.count_documents(recent_leads_filter)
         
+        # Leads today
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        leads_today_filter = {**user_filter, "created_at": {"$gte": today_start}}
+        leads_today = await current_db.leads.count_documents(leads_today_filter)
+        
+        # Leads last 30 days
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        leads_30d_filter = {**user_filter, "created_at": {"$gte": thirty_days_ago}}
+        leads_last_30_days = await current_db.leads.count_documents(leads_30d_filter)
+        
         # Total contacts
         total_contacts = await current_db.contacts.count_documents({})
         
+        # Mini-analyses count (from mini_analyses collection + leads with source=mini-analyse)
+        mini_analyses_count = 0
+        try:
+            # Count from dedicated collection
+            mini_analyses_count = await current_db.mini_analyses.count_documents({})
+        except:
+            pass
+        
+        # Also count leads with mini-analyse source
+        mini_leads = await current_db.leads.count_documents({
+            "source": {"$regex": "mini.?analy", "$options": "i"}
+        })
+        mini_analyses_total = mini_analyses_count + mini_leads
+        
+        # Return in format expected by frontend (nested structure)
         return {
+            # Flat structure (legacy)
             "total_leads": total_leads,
             "total_opportunities": total_opportunities,
             "total_contacts": total_contacts,
             "pipeline_value": pipeline_value,
             "leads_by_status": leads_by_status,
-            "recent_leads": recent_leads
+            "recent_leads": recent_leads,
+            "mini_analyses": mini_analyses_total,
+            # Nested structure (frontend expected)
+            "leads": {
+                "total": total_leads,
+                "today": leads_today,
+                "last_7_days": recent_leads,
+                "last_30_days": leads_last_30_days,
+                "by_status": leads_by_status
+            },
+            "opportunities": {
+                "total": total_opportunities,
+                "pipeline_value": pipeline_value
+            },
+            "contacts": {
+                "total": total_contacts
+            }
         }
         
     except Exception as e:
