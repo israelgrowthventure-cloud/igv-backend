@@ -184,8 +184,13 @@ cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS') or os.getenv('CORS_ORIGINS'
 DEFAULT_ORIGINS = [
     "https://israelgrowthventure.com",
     "https://www.israelgrowthventure.com",
+    "https://admin.israelgrowthventure.com",
+    "https://cms.israelgrowthventure.com",
+    "https://crm.israelgrowthventure.com",
     "http://localhost:3000",  # Local development
-    "http://127.0.0.1:3000"   # Local development
+    "http://127.0.0.1:3000",   # Local development
+    "http://localhost:5173",  # Vite dev server
+    "http://127.0.0.1:5173"   # Vite dev server
 ]
 
 # Merge environment origins with defaults (global variable for exception handlers)

@@ -868,6 +868,268 @@ async def create_email_draft(draft_data: EmailDraftCreate, user: Dict = Depends(
 
 
 # ==========================================
+# SETTINGS (dispatch, users, tags)
+# ==========================================
+
+@router.get("/settings/dispatch")
+async def get_dispatch_settings(user: Dict = Depends(get_current_user)):
+    """Get lead dispatch/routing settings"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Return dispatch settings from settings collection
+        settings_cursor = current_db.settings.find({
+            "$or": [
+                {"category": "dispatch"},
+                {"key": {"$regex": "^dispatch_"}}
+            ]
+        })
+        
+        settings_list = await settings_cursor.to_list(100)
+        dispatch_settings = {s["key"]: s.get("value") for s in settings_list}
+        
+        # Default settings if empty
+        if not dispatch_settings:
+            dispatch_settings = {
+                "auto_assign_enabled": False,
+                "round_robin_enabled": True,
+                "notify_on_assign": True
+            }
+        
+        return {"success": True, "data": dispatch_settings}
+        
+    except Exception as e:
+        logging.error(f"[CRM Settings] Error getting dispatch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/settings/dispatch")
+async def update_dispatch_settings(data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
+    """Update dispatch settings (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    # Admin check
+    if user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        import json
+        
+        for key, value in data.items():
+            await current_db.settings.update_one(
+                {"key": key},
+                {
+                    "$set": {
+                        "category": "dispatch",
+                        "key": key,
+                        "value": json.dumps(value) if isinstance(value, (dict, list)) else str(value),
+                        "updated_at": datetime.now(timezone.utc),
+                        "updated_by": user["email"]
+                    }
+                },
+                upsert=True
+            )
+        
+        return {"success": True, "message": "Dispatch settings updated"}
+        
+    except Exception as e:
+        logging.error(f"[CRM Settings] Error updating dispatch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/settings/users")
+async def get_crm_users_list(user: Dict = Depends(get_current_user)):
+    """Get CRM users list for assignment"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Get active CRM users
+        users_cursor = current_db.crm_users.find(
+            {"is_active": True},
+            {"email": 1, "name": 1, "role": 1, "_id": 0}
+        )
+        
+        users = await users_cursor.to_list(100)
+        
+        return {"success": True, "data": users}
+        
+    except Exception as e:
+        logging.error(f"[CRM Settings] Error getting users: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/settings/tags")
+async def get_available_tags(user: Dict = Depends(get_current_user)):
+    """Get available tags from leads and contacts"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Aggregate distinct tags from leads
+        tags_set = set()
+        
+        leads_cursor = current_db.leads.find({"tags": {"$exists": True, "$ne": []}}, {"tags": 1})
+        async for lead in leads_cursor:
+            if lead.get("tags"):
+                tags_set.update(lead["tags"])
+        
+        contacts_cursor = current_db.contacts.find({"tags": {"$exists": True, "$ne": []}}, {"tags": 1})
+        async for contact in contacts_cursor:
+            if contact.get("tags"):
+                tags_set.update(contact["tags"])
+        
+        return {"success": True, "data": sorted(list(tags_set))}
+        
+    except Exception as e:
+        logging.error(f"[CRM Settings] Error getting tags: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# LEADS - ADVANCED QUERIES (overdue, missing actions)
+# ==========================================
+
+@router.get("/leads/overdue-actions")
+async def get_leads_overdue_actions(user: Dict = Depends(get_current_user)):
+    """Get leads with overdue next actions"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Get user filter for RBAC
+        user_filter = get_user_assigned_filter(user)
+        
+        # Find leads with overdue actions
+        now = datetime.now(timezone.utc)
+        overdue_filter = {
+            **user_filter,
+            "next_action_date": {"$lt": now},
+            "status": {"$nin": ["converted", "lost"]}
+        }
+        
+        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(100)
+        leads = await leads_cursor.to_list(100)
+        
+        # Format leads
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        
+        return {"success": True, "data": leads, "total": len(leads)}
+        
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error getting overdue actions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/leads/missing-next-action")
+async def get_leads_missing_next_action(user: Dict = Depends(get_current_user)):
+    """Get leads without next action defined"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Get user filter for RBAC
+        user_filter = get_user_assigned_filter(user)
+        
+        # Find leads without next action
+        missing_filter = {
+            **user_filter,
+            "$or": [
+                {"next_action": {"$exists": False}},
+                {"next_action": None},
+                {"next_action": ""}
+            ],
+            "status": {"$nin": ["converted", "lost"]}
+        }
+        
+        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(100)
+        leads = await leads_cursor.to_list(100)
+        
+        # Format leads
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        
+        return {"success": True, "data": leads, "total": len(leads)}
+        
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error getting missing next actions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/leads/{lead_id}/next-action")
+async def update_lead_next_action(lead_id: str, data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
+    """Update lead next action and date"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid lead ID")
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # RBAC check
+    if user["role"] == "commercial":
+        if lead.get("assigned_to") != user["email"] and lead.get("owner_email") != user["email"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        update_dict = {
+            "updated_at": datetime.now(timezone.utc)
+        }
+        
+        if "next_action" in data:
+            update_dict["next_action"] = data["next_action"]
+        if "next_action_date" in data:
+            # Parse date string if needed
+            if isinstance(data["next_action_date"], str):
+                try:
+                    update_dict["next_action_date"] = datetime.fromisoformat(data["next_action_date"].replace('Z', '+00:00'))
+                except:
+                    update_dict["next_action_date"] = data["next_action_date"]
+            else:
+                update_dict["next_action_date"] = data["next_action_date"]
+        
+        await current_db.leads.update_one(
+            {"_id": ObjectId(lead_id)},
+            {"$set": update_dict}
+        )
+        
+        # Log activity
+        await log_audit_event(
+            current_db,
+            user_id=user["id"],
+            user_email=user["email"],
+            action="next_action_updated",
+            resource_type="lead",
+            resource_id=lead_id,
+            details={"next_action": data.get("next_action"), "next_action_date": str(data.get("next_action_date"))}
+        )
+        
+        return {"success": True, "message": "Next action updated"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error updating next action: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
 # LOGOUT (from crm_missing_routes)
 # ==========================================
 
