@@ -1719,3 +1719,186 @@ async def get_email_history(
     except Exception as e:
         logging.error(f"Email history error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# LEAD NOTES (required by frontend)
+# ==========================================
+
+@router.get("/leads/{lead_id}/notes")
+async def get_lead_notes(lead_id: str, user: Dict = Depends(get_current_user)):
+    """Get notes for a lead"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        notes = await current_db.notes.find({"lead_id": lead_id}).sort("created_at", -1).to_list(100)
+        
+        for note in notes:
+            note["_id"] = str(note["_id"])
+            note["id"] = note["_id"]
+        
+        return {"notes": notes, "total": len(notes)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching lead notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/leads/{lead_id}/notes")
+async def add_lead_note(lead_id: str, note_data: NoteCreate, user: Dict = Depends(get_current_user)):
+    """Add a note to a lead"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        new_note = {
+            "lead_id": lead_id,
+            "note_text": note_data.text,
+            "content": note_data.text,
+            "created_by": user["email"],
+            "user_email": user["email"],
+            "created_at": datetime.now(timezone.utc)
+        }
+        
+        result = await current_db.notes.insert_one(new_note)
+        
+        return {"message": "Note added", "note_id": str(result.inserted_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error adding lead note: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# LEAD CONVERSION (required by frontend)
+# ==========================================
+
+@router.post("/leads/{lead_id}/convert-to-contact")
+async def convert_lead_to_contact(lead_id: str, user: Dict = Depends(get_current_user)):
+    """Convert a lead to a contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        # Check if already converted
+        if lead.get("status", "").lower() == "converted":
+            raise HTTPException(status_code=400, detail="Lead already converted")
+        
+        # Check minimum required fields
+        email = lead.get("email")
+        name = lead.get("contact_name") or lead.get("name") or lead.get("brand_name")
+        
+        if not email and not name:
+            raise HTTPException(status_code=400, detail="Lead must have at least email or name to be converted")
+        
+        # Create contact from lead
+        new_contact = {
+            "email": email or "",
+            "name": name or email or "Unknown",
+            "phone": lead.get("phone", ""),
+            "company": lead.get("brand_name", ""),
+            "position": "",
+            "tags": lead.get("tags", []),
+            "source": "converted_lead",
+            "source_lead_id": lead_id,
+            "language": lead.get("language", "fr"),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "created_by": user["email"]
+        }
+        
+        result = await current_db.contacts.insert_one(new_contact)
+        contact_id = str(result.inserted_id)
+        
+        # Update lead status to CONVERTED
+        await current_db.leads.update_one(
+            {"_id": ObjectId(lead_id)},
+            {
+                "$set": {
+                    "status": "CONVERTED",
+                    "converted_at": datetime.now(timezone.utc),
+                    "converted_contact_id": contact_id,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        # Log activity
+        await log_audit_event(
+            current_db,
+            user_id=user.get("id", ""),
+            user_email=user["email"],
+            action="lead_converted",
+            resource_type="lead",
+            resource_id=lead_id,
+            details={"contact_id": contact_id}
+        )
+        
+        return {
+            "message": "Lead converted to contact successfully",
+            "contact_id": contact_id,
+            "lead_id": lead_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error converting lead to contact: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# LEAD ASSIGNMENT (required by frontend)
+# ==========================================
+
+@router.post("/leads/{lead_id}/assign")
+async def assign_lead(lead_id: str, assign_data: dict, user: Dict = Depends(get_current_user)):
+    """Assign a lead to a commercial"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        commercial_email = assign_data.get("commercial_email")
+        if not commercial_email:
+            raise HTTPException(status_code=400, detail="commercial_email is required")
+        
+        await current_db.leads.update_one(
+            {"_id": ObjectId(lead_id)},
+            {
+                "$set": {
+                    "assigned_to": commercial_email,
+                    "assigned_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        return {"message": "Lead assigned successfully", "assigned_to": commercial_email}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error assigning lead: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
