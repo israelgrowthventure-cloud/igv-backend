@@ -37,6 +37,7 @@ class LeadCreate(BaseModel):
     email: EmailStr
     brand_name: str
     name: Optional[str] = None
+    contact_name: Optional[str] = None  # Frontend sends contact_name
     phone: Optional[str] = None
     sector: Optional[str] = None
     language: str = "fr"
@@ -49,6 +50,8 @@ class LeadCreate(BaseModel):
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
+    status: Optional[str] = None  # Frontend sends status
+    priority: Optional[str] = None  # Frontend sends priority
 
 
 class LeadFromPackRequest(BaseModel):
@@ -371,6 +374,7 @@ async def get_leads(
             filter_query["$or"] = [
                 {"email": {"$regex": search, "$options": "i"}},
                 {"name": {"$regex": search, "$options": "i"}},
+                {"contact_name": {"$regex": search, "$options": "i"}},
                 {"brand_name": {"$regex": search, "$options": "i"}},
                 {"phone": {"$regex": search, "$options": "i"}}
             ]
@@ -388,6 +392,7 @@ async def get_leads(
         for lead in leads:
             lead["_id"] = str(lead["_id"])
             lead["id"] = lead["_id"]
+            lead["lead_id"] = lead["_id"]  # Frontend expects lead_id
             leads_formatted.append(lead)
         
         return {
@@ -426,6 +431,7 @@ async def get_lead_detail(lead_id: str, user: Dict = Depends(get_current_user)):
         
         lead["_id"] = str(lead["_id"])
         lead["id"] = lead["_id"]
+        lead["lead_id"] = lead["_id"]  # Frontend expects lead_id
         
         return lead
         
@@ -444,11 +450,12 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
+        lead_dict = lead_data.dict(exclude_none=True)
         new_lead = {
-            **lead_data.dict(),
-            "status": "NEW",
+            **lead_dict,
+            "status": lead_dict.get("status", "NEW"),  # Use frontend value or default
             "stage": "lead",
-            "priority": "medium",
+            "priority": lead_dict.get("priority", "C"),  # Use frontend value or default
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
             "created_by": user["email"],
@@ -457,10 +464,10 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
         
         result = await current_db.leads.insert_one(new_lead)
         
-        # Log activity
+        # Log activity (with safe user id access)
         await log_audit_event(
             current_db,
-            user_id=user["id"],
+            user_id=user.get("id", user.get("_id", "")),
             user_email=user["email"],
             action="lead_created",
             resource_type="lead",
