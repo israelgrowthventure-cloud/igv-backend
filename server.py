@@ -1032,8 +1032,13 @@ from app.routers.crm.main import (
     get_rbac_roles, get_rbac_permissions, update_user_role, set_custom_permissions,
     get_audit_logs, get_audit_stats, get_entity_audit_logs, get_user_audit_logs,
     get_crm_users, create_crm_user, update_crm_user, delete_crm_user, assign_user_to_entity, change_user_password,
-    get_roles_alias, get_pipeline_view, get_activities, get_email_history
+    get_roles_alias, get_pipeline_view, get_activities, get_email_history,
+    get_leads_overdue_actions, get_leads_missing_next_action
 )
+
+# Leads Advanced Queries - MUST be defined BEFORE /leads/{lead_id} routes
+app.get("/api/crm/leads/overdue-actions")(get_leads_overdue_actions)
+app.get("/api/crm/leads/missing-next-action")(get_leads_missing_next_action)
 
 # KPI Routes
 app.get("/api/crm/kpi/response-times")(get_response_times_kpi)
