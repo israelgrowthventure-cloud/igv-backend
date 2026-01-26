@@ -998,6 +998,49 @@ async def monetico_callback(data: Dict[str, Any]):
     return {"version": "3.0", "cdr": "0"}  # Acknowledge receipt
 
 
+# ===== FALLBACK ROUTES: Ensure all CRM endpoints are accessible =====
+from app.routers.crm.main import (
+    get_response_times_kpi, get_conversion_times_kpi, get_source_performance_kpi, get_funnel_kpi,
+    get_rbac_roles, get_rbac_permissions, update_user_role, set_custom_permissions,
+    get_audit_logs, get_audit_stats, get_entity_audit_logs, get_user_audit_logs,
+    get_crm_users, create_crm_user, update_crm_user, delete_crm_user, assign_user_to_entity, change_user_password,
+    get_roles_alias, get_pipeline_view, get_activities, get_email_history
+)
+
+# KPI Routes
+app.get("/api/crm/kpi/response-times")(get_response_times_kpi)
+app.get("/api/crm/kpi/conversion-times")(get_conversion_times_kpi)
+app.get("/api/crm/kpi/source-performance")(get_source_performance_kpi)
+app.get("/api/crm/kpi/funnel")(get_funnel_kpi)
+
+# RBAC Routes
+app.get("/api/crm/rbac/roles")(get_rbac_roles)
+app.get("/api/crm/rbac/permissions")(get_rbac_permissions)
+app.put("/api/crm/users/{user_id}/role")(update_user_role)
+app.put("/api/crm/users/{user_id}/permissions")(set_custom_permissions)
+
+# Audit Routes
+app.get("/api/crm/audit-logs")(get_audit_logs)
+app.get("/api/crm/audit-logs/stats")(get_audit_stats)
+app.get("/api/crm/audit-logs/entity/{entity_type}/{entity_id}")(get_entity_audit_logs)
+app.get("/api/crm/audit-logs/user/{email}")(get_user_audit_logs)
+
+# User Management Routes
+app.get("/api/crm/settings/users")(get_crm_users)
+app.post("/api/crm/settings/users")(create_crm_user)
+app.put("/api/crm/settings/users/{user_id}")(update_crm_user)
+app.delete("/api/crm/settings/users/{user_id}")(delete_crm_user)
+app.post("/api/crm/settings/users/{user_id}/assign")(assign_user_to_entity)
+app.post("/api/crm/settings/users/{user_id}/change-password")(change_user_password)
+
+# Roles Alias
+app.get("/api/crm/roles")(get_roles_alias)
+
+# Pipeline, Activities, Emails
+app.get("/api/crm/pipeline")(get_pipeline_view)
+app.get("/api/crm/activities")(get_activities)
+app.get("/api/crm/emails/history")(get_email_history)
+
 # Include the routers in the main app
 app.include_router(api_router)
 app.include_router(ai_router)  # AI Insight generation

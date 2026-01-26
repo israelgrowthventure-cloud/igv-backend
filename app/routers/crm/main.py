@@ -1163,3 +1163,517 @@ async def admin_get_leads(limit: int = Query(10, le=200), skip: int = 0, user: D
     except Exception as e:
         logging.error(f"Error fetching admin leads: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# KPI ENDPOINTS
+# ==========================================
+
+@router.get("/kpi/response-times")
+async def get_response_times_kpi(user: Dict = Depends(get_current_user)):
+    """Get average response times by status"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        pipeline = [
+            {"$group": {"_id": "$status", "avg_response_time": {"$avg": "$response_time"}}},
+            {"$sort": {"avg_response_time": 1}}
+        ]
+        result = await current_db.leads.aggregate(pipeline).to_list(None)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logging.error(f"KPI response-times error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kpi/conversion-times")
+async def get_conversion_times_kpi(user: Dict = Depends(get_current_user)):
+    """Get average conversion times by source"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        pipeline = [
+            {"$match": {"status": "converted"}},
+            {"$group": {"_id": "$source", "avg_conversion_time": {"$avg": "$conversion_time"}}},
+            {"$sort": {"avg_conversion_time": 1}}
+        ]
+        result = await current_db.leads.aggregate(pipeline).to_list(None)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logging.error(f"KPI conversion-times error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kpi/source-performance")
+async def get_source_performance_kpi(user: Dict = Depends(get_current_user)):
+    """Get performance metrics by source"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        pipeline = [
+            {"$group": {
+                "_id": "$source",
+                "total_leads": {"$sum": 1},
+                "converted": {"$sum": {"$cond": [{"$eq": ["$status", "converted"]}, 1, 0]}}
+            }},
+            {"$addFields": {"conversion_rate": {"$divide": ["$converted", "$total_leads"]}}},
+            {"$sort": {"conversion_rate": -1}}
+        ]
+        result = await current_db.leads.aggregate(pipeline).to_list(None)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logging.error(f"KPI source-performance error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kpi/funnel")
+async def get_funnel_kpi(user: Dict = Depends(get_current_user)):
+    """Get funnel conversion rates by stage"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        pipeline = [
+            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        result = await current_db.leads.aggregate(pipeline).to_list(None)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logging.error(f"KPI funnel error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# RBAC ENDPOINTS
+# ==========================================
+
+@router.get("/rbac/roles")
+async def get_rbac_roles(user: Dict = Depends(get_current_user)):
+    """Get all available roles and permissions"""
+    try:
+        roles = {
+            "admin": {"name": "Admin", "permissions": ["read", "write", "delete", "manage_users"]},
+            "manager": {"name": "Manager", "permissions": ["read", "write", "manage_team"]},
+            "sales": {"name": "Sales", "permissions": ["read", "write"]},
+            "viewer": {"name": "Viewer", "permissions": ["read"]}
+        }
+        return {"success": True, "data": roles}
+    except Exception as e:
+        logging.error(f"RBAC roles error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/rbac/permissions")
+async def get_rbac_permissions(user: Dict = Depends(get_current_user)):
+    """Get all available permissions"""
+    try:
+        permissions = [
+            {"id": "read", "name": "Read", "description": "View CRM data"},
+            {"id": "write", "name": "Write", "description": "Create and edit CRM data"},
+            {"id": "delete", "name": "Delete", "description": "Delete CRM data"},
+            {"id": "manage_users", "name": "Manage Users", "description": "Create and edit users"},
+            {"id": "manage_team", "name": "Manage Team", "description": "Manage team members"}
+        ]
+        return {"success": True, "data": permissions}
+    except Exception as e:
+        logging.error(f"RBAC permissions error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/users/{user_id}/role")
+async def update_user_role(user_id: str, data: Dict = Body(...), admin: Dict = Depends(require_admin)):
+    """Update user role (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        new_role = data.get("role")
+        if new_role not in ["admin", "manager", "sales", "viewer"]:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        
+        result = await current_db.crm_users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"role": new_role, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        await log_audit_event(current_db, "user_role_updated", admin["email"], {"user_id": user_id, "new_role": new_role})
+        return {"success": True, "message": "Role updated"}
+    except Exception as e:
+        logging.error(f"Update role error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/users/{user_id}/permissions")
+async def set_custom_permissions(user_id: str, data: Dict = Body(...), admin: Dict = Depends(require_admin)):
+    """Set custom permissions for user (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        permissions = data.get("permissions", [])
+        result = await current_db.crm_users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"custom_permissions": permissions, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        await log_audit_event(current_db, "user_permissions_updated", admin["email"], {"user_id": user_id, "permissions": permissions})
+        return {"success": True, "message": "Permissions updated"}
+    except Exception as e:
+        logging.error(f"Update permissions error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# AUDIT LOG ENDPOINTS
+# ==========================================
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    event_type: Optional[str] = None,
+    user_email: Optional[str] = None,
+    user: Dict = Depends(get_current_user)
+):
+    """Get audit logs with pagination and filtering"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        query = {}
+        if event_type:
+            query["event_type"] = event_type
+        if user_email:
+            query["user_email"] = user_email
+        
+        logs = await current_db.audit_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+        total = await current_db.audit_logs.count_documents(query)
+        
+        for log in logs:
+            log["_id"] = str(log["_id"])
+        
+        return {"success": True, "data": logs, "total": total, "skip": skip, "limit": limit}
+    except Exception as e:
+        logging.error(f"Audit logs error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit-logs/stats")
+async def get_audit_stats(user: Dict = Depends(get_current_user)):
+    """Get audit log statistics"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        pipeline = [
+            {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        result = await current_db.audit_logs.aggregate(pipeline).to_list(None)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logging.error(f"Audit stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit-logs/entity/{entity_type}/{entity_id}")
+async def get_entity_audit_logs(entity_type: str, entity_id: str, user: Dict = Depends(get_current_user)):
+    """Get audit logs for specific entity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        query = {
+            "entity_type": entity_type,
+            "entity_id": entity_id
+        }
+        logs = await current_db.audit_logs.find(query).sort("timestamp", -1).to_list(100)
+        for log in logs:
+            log["_id"] = str(log["_id"])
+        return {"success": True, "data": logs}
+    except Exception as e:
+        logging.error(f"Entity audit logs error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit-logs/user/{email}")
+async def get_user_audit_logs(email: str, user: Dict = Depends(get_current_user)):
+    """Get audit logs for specific user"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        logs = await current_db.audit_logs.find({"user_email": email}).sort("timestamp", -1).to_list(100)
+        for log in logs:
+            log["_id"] = str(log["_id"])
+        return {"success": True, "data": logs}
+    except Exception as e:
+        logging.error(f"User audit logs error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# USER MANAGEMENT ENDPOINTS (CRUD)
+# ==========================================
+
+@router.get("/settings/users")
+async def get_crm_users(user: Dict = Depends(get_current_user)):
+    """Get all CRM users (already exists, keeping for consistency)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        users = await current_db.crm_users.find({}).to_list(None)
+        for u in users:
+            u["_id"] = str(u["_id"])
+            u.pop("password", None)
+        return {"success": True, "data": users}
+    except Exception as e:
+        logging.error(f"Get users error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings/users")
+async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_admin)):
+    """Create new CRM user (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        from passlib.hash import bcrypt
+        email = data.get("email")
+        password = data.get("password")
+        role = data.get("role", "viewer")
+        
+        if not email or not password:
+            raise HTTPException(status_code=400, detail="Email and password required")
+        
+        existing = await current_db.crm_users.find_one({"email": email})
+        if existing:
+            raise HTTPException(status_code=400, detail="User already exists")
+        
+        hashed_password = bcrypt.hash(password)
+        new_user = {
+            "email": email,
+            "password": hashed_password,
+            "role": role,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+        result = await current_db.crm_users.insert_one(new_user)
+        new_user["_id"] = str(result.inserted_id)
+        new_user.pop("password")
+        
+        await log_audit_event(current_db, "user_created", admin["email"], {"user_email": email, "role": role})
+        return {"success": True, "data": new_user}
+    except Exception as e:
+        logging.error(f"Create user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/settings/users/{user_id}")
+async def update_crm_user(user_id: str, data: Dict = Body(...), admin: Dict = Depends(require_admin)):
+    """Update CRM user (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        update_data = {"updated_at": datetime.now(timezone.utc)}
+        if "email" in data:
+            update_data["email"] = data["email"]
+        if "role" in data:
+            update_data["role"] = data["role"]
+        
+        result = await current_db.crm_users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": update_data}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        await log_audit_event(current_db, "user_updated", admin["email"], {"user_id": user_id, "changes": update_data})
+        return {"success": True, "message": "User updated"}
+    except Exception as e:
+        logging.error(f"Update user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/settings/users/{user_id}")
+async def delete_crm_user(user_id: str, admin: Dict = Depends(require_admin)):
+    """Delete CRM user (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        user = await current_db.crm_users.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        result = await current_db.crm_users.delete_one({"_id": ObjectId(user_id)})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        await log_audit_event(current_db, "user_deleted", admin["email"], {"user_id": user_id, "user_email": user.get("email")})
+        return {"success": True, "message": "User deleted"}
+    except Exception as e:
+        logging.error(f"Delete user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings/users/{user_id}/assign")
+async def assign_user_to_entity(user_id: str, data: Dict = Body(...), admin: Dict = Depends(require_admin)):
+    """Assign user to entity (leads, contacts, etc.)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        entity_type = data.get("entity_type")
+        entity_id = data.get("entity_id")
+        
+        if entity_type not in ["lead", "contact", "opportunity"]:
+            raise HTTPException(status_code=400, detail="Invalid entity type")
+        
+        collection_map = {"lead": "leads", "contact": "contacts", "opportunity": "opportunities"}
+        collection = current_db[collection_map[entity_type]]
+        
+        result = await collection.update_one(
+            {"_id": ObjectId(entity_id)},
+            {"$set": {"assigned_to": user_id, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Entity not found")
+        
+        await log_audit_event(current_db, "user_assigned", admin["email"], {"user_id": user_id, "entity_type": entity_type, "entity_id": entity_id})
+        return {"success": True, "message": "User assigned"}
+    except Exception as e:
+        logging.error(f"Assign user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings/users/{user_id}/change-password")
+async def change_user_password(user_id: str, data: Dict = Body(...), admin: Dict = Depends(require_admin)):
+    """Change user password (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        from passlib.hash import bcrypt
+        new_password = data.get("password")
+        
+        if not new_password:
+            raise HTTPException(status_code=400, detail="Password required")
+        
+        hashed_password = bcrypt.hash(new_password)
+        result = await current_db.crm_users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"password": hashed_password, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        await log_audit_event(current_db, "password_changed", admin["email"], {"user_id": user_id})
+        return {"success": True, "message": "Password changed"}
+    except Exception as e:
+        logging.error(f"Change password error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ROLES ALIAS (for /api/crm/roles route)
+# ==========================================
+
+@router.get("/roles")
+async def get_roles_alias(user: Dict = Depends(get_current_user)):
+    """Alias for /rbac/roles - for frontend compatibility"""
+    return await get_rbac_roles(user)
+
+
+# ==========================================
+# PIPELINE, ACTIVITIES, EMAILS ENDPOINTS
+# ==========================================
+
+@router.get("/pipeline")
+async def get_pipeline_view(user: Dict = Depends(get_current_user)):
+    """Get pipeline view with opportunities grouped by stage"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        pipeline = [
+            {"$group": {
+                "_id": "$stage",
+                "count": {"$sum": 1},
+                "total_value": {"$sum": "$estimated_value"}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        result = await current_db.opportunities.aggregate(pipeline).to_list(None)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logging.error(f"Pipeline view error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/activities")
+async def get_activities(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    user: Dict = Depends(get_current_user)
+):
+    """Get CRM activities with pagination"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        activities = await current_db.crm_activities.find({}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        total = await current_db.crm_activities.count_documents({})
+        
+        for activity in activities:
+            activity["_id"] = str(activity["_id"])
+        
+        return {"success": True, "data": activities, "total": total, "skip": skip, "limit": limit}
+    except Exception as e:
+        logging.error(f"Activities error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/emails/history")
+async def get_email_history(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    lead_id: Optional[str] = None,
+    user: Dict = Depends(get_current_user)
+):
+    """Get email history with optional lead filter"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        query = {}
+        if lead_id:
+            query["lead_id"] = lead_id
+        
+        emails = await current_db.email_history.find(query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
+        total = await current_db.email_history.count_documents(query)
+        
+        for email in emails:
+            email["_id"] = str(email["_id"])
+        
+        return {"success": True, "data": emails, "total": total, "skip": skip, "limit": limit}
+    except Exception as e:
+        logging.error(f"Email history error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
