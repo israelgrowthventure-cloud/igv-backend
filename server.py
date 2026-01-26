@@ -862,18 +862,22 @@ async def admin_login(credentials: AdminLoginRequest):
 async def verify_admin_token_endpoint(user: Dict = Depends(get_current_user)):
     """Verify admin JWT token and return user info"""
     # Get name from user object or fetch from database
-    user_name = user.get('name')
-    if not user_name and db:
+    user_name = user.get('name', '')
+    
+    # Only attempt DB lookup if db is available and name is missing
+    if not user_name and db is not None:
         try:
             db_user = await db.crm_users.find_one({"email": user['email']})
             if not db_user:
                 db_user = await db.users.find_one({"email": user['email']})
             if db_user:
-                user_name = db_user.get('name') or db_user.get('first_name', '') + ' ' + db_user.get('last_name', '')
-                user_name = user_name.strip()
-        except:
-            pass
+                first = db_user.get('first_name', '') or ''
+                last = db_user.get('last_name', '') or ''
+                user_name = db_user.get('name') or f"{first} {last}".strip()
+        except Exception as e:
+            logging.warning(f"Could not fetch user name from DB: {e}")
     
+    # Fallback to email prefix if still no name
     if not user_name:
         user_name = user['email'].split('@')[0]
     
