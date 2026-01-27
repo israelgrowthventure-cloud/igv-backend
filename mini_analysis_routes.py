@@ -759,6 +759,8 @@ def build_prompt(request: MiniAnalysisRequest, language: str = "fr") -> str:
 - **Existing Shops Count (Israel):** {request.shop_count or "N/A"}
 - **Existing Shop Cities (Israel):** {request.shop_cities or "N/A"}
 
+⚠️ **CRITICAL DIRECTIVE**: If the client has indicated existing shop cities (shop_cities), you MUST NOT recommend opening stores in those cities. Focus your recommendations on OTHER cities from the whitelist.
+
 ---
 
 **REFERENCE DOCUMENT 1: Location Types and Activities**
@@ -795,6 +797,8 @@ def build_prompt(request: MiniAnalysisRequest, language: str = "fr") -> str:
 - **מספר סניפים קיימים:** {request.shop_count or "לא צוין"}
 - **ערים עם סניפים:** {request.shop_cities or "לא צוין"}
 
+⚠️ **הנחיה קריטית**: אם הלקוח ציין ערים עם סניפים קיימים (shop_cities), אל תמליץ על פתיחת חנויות באותן ערים. התמקד בהמלצות עבור ערים אחרות מרשימת המותרים.
+
 ---
 
 **מסמך עזר 1: סוגי מיקומים ופעילויות**
@@ -830,6 +834,8 @@ def build_prompt(request: MiniAnalysisRequest, language: str = "fr") -> str:
 - **Contraintes:** {request.contraintes or "Non spécifié"}
 - **Nombre de points de vente existants:** {request.shop_count or "Non spécifié"}
 - **Villes d'implantation actuelles:** {request.shop_cities or "Non spécifié"}
+
+⚠️ **DIRECTIVE CRITIQUE**: Si le client a indiqué des villes d'implantation existantes (shop_cities), tu NE DOIS PAS proposer d'ouverture de boutiques dans ces villes. Concentre tes recommandations sur d'AUTRES villes de la whitelist.
 
 ---
 
