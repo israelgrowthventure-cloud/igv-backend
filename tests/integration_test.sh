@@ -2,7 +2,7 @@
 # Tests d'intégration complets - Backend IGV
 # Date: 2026-01-27
 
-API_URL="https://igv-backend.onrender.com"
+API_URL="https://igv-cms-backend.onrender.com"
 
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║   🧪 Tests Backend IGV - Validation Complète        ║"

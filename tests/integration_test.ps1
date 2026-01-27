@@ -2,7 +2,7 @@
 # Date: 2026-01-27
 # PowerShell version
 
-$API_URL = "https://igv-backend.onrender.com"
+$API_URL = "https://igv-cms-backend.onrender.com"
 
 Write-Host "===============================================================" -ForegroundColor Cyan
 Write-Host "   Tests Backend IGV - Validation Complete" -ForegroundColor Cyan
