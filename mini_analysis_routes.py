@@ -632,6 +632,10 @@ class MiniAnalysisRequest(BaseModel):
     objectif_israel: str = ""
     contraintes: str = ""
     language: str = "fr"  # LANGUAGE SUPPORT: fr/en/he
+
+    # ISRAEL SPECIFIC (Added 2026-01-27)
+    shop_count: str = ""
+    shop_cities: str = ""
     
     def model_post_init(self, __context):
         """Handle aliases - populate nom_de_marque from company_name or brand_name"""
@@ -752,6 +756,8 @@ def build_prompt(request: MiniAnalysisRequest, language: str = "fr") -> str:
 - **Differentiation:** {request.differenciation or "Not specified"}
 - **Israel Objective:** {request.objectif_israel or "Not specified"}
 - **Constraints:** {request.contraintes or "Not specified"}
+- **Existing Shops Count (Israel):** {request.shop_count or "N/A"}
+- **Existing Shop Cities (Israel):** {request.shop_cities or "N/A"}
 
 ---
 
@@ -786,6 +792,8 @@ def build_prompt(request: MiniAnalysisRequest, language: str = "fr") -> str:
 - **בידול:** {request.differenciation or "לא צוין"}
 - **יעד בישראל:** {request.objectif_israel or "לא צוין"}
 - **אילוצים:** {request.contraintes or "לא צוין"}
+- **מספר סניפים קיימים:** {request.shop_count or "לא צוין"}
+- **ערים עם סניפים:** {request.shop_cities or "לא צוין"}
 
 ---
 
@@ -820,6 +828,8 @@ def build_prompt(request: MiniAnalysisRequest, language: str = "fr") -> str:
 - **Différenciation:** {request.differenciation or "Non spécifié"}
 - **Objectif Israël:** {request.objectif_israel or "Non spécifié"}
 - **Contraintes:** {request.contraintes or "Non spécifié"}
+- **Nombre de points de vente existants:** {request.shop_count or "Non spécifié"}
+- **Villes d'implantation actuelles:** {request.shop_cities or "Non spécifié"}
 
 ---
 
