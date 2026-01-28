@@ -657,19 +657,19 @@ async def delete_faq(
 @router.post("/admin/faq/seed")
 async def seed_faq(user: Dict = Depends(get_current_user)):
     """
-    Seed default FAQ items.
+    Seed default FAQ items in FR, EN and HE.
     """
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
-    count = await db.blog_faq.count_documents({})
-    if count > 0:
-        return {"success": False, "message": f"{count} FAQ items already exist", "seeded": 0}
+    # Clear existing FAQ
+    await db.blog_faq.delete_many({})
     
     now = datetime.now(timezone.utc)
     
     default_faq = [
+        # ============ FRENCH ============
         {
             "question": "Comment IGV peut m'aider à m'implanter en Israël ?",
             "answer": "IGV vous accompagne de A à Z : étude de marché, recherche de partenaires locaux, négociation de baux commerciaux et lancement opérationnel.",
@@ -698,6 +698,25 @@ async def seed_faq(user: Dict = Depends(get_current_user)):
             "updated_at": now
         },
         {
+            "question": "Avez-vous des partenaires locaux en Israël ?",
+            "answer": "Oui, nous avons un réseau solide de partenaires locaux : avocats, comptables, agents immobiliers et professionnels du retail.",
+            "language": "fr",
+            "order": 3,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "Quels sont vos tarifs ?",
+            "answer": "Nos tarifs varient selon la complexité de votre projet. Contactez-nous pour un devis personnalisé gratuit.",
+            "language": "fr",
+            "order": 4,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        # ============ ENGLISH ============
+        {
             "question": "How can IGV help me expand to Israel?",
             "answer": "IGV supports you from A to Z: market research, local partner search, commercial lease negotiation and operational launch.",
             "language": "en",
@@ -714,13 +733,357 @@ async def seed_faq(user: Dict = Depends(get_current_user)):
             "published": True,
             "created_at": now,
             "updated_at": now
-        }
+        },
+        {
+            "question": "Which sectors are growing in Israel?",
+            "answer": "Food & beverage, fashion, cosmetics and retail tech are experiencing strong growth.",
+            "language": "en",
+            "order": 2,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "Do you have local partners in Israel?",
+            "answer": "Yes, we have a strong network of local partners: lawyers, accountants, real estate agents and retail professionals.",
+            "language": "en",
+            "order": 3,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "What are your rates?",
+            "answer": "Our rates vary depending on the complexity of your project. Contact us for a free personalized quote.",
+            "language": "en",
+            "order": 4,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        # ============ HEBREW ============
+        {
+            "question": "כיצד IGV יכולה לעזור לי להתרחב לישראל?",
+            "answer": "IGV מלווה אתכם מא' ועד ת': מחקר שוק, חיפוש שותפים מקומיים, משא ומתן על חוזי שכירות מסחריים והשקה תפעולית.",
+            "language": "he",
+            "order": 0,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "כמה זמן לוקח לפתוח עסק בישראל?",
+            "answer": "בממוצע 6 עד 12 חודשים, בהתאם למורכבות הפרויקט ולענף הפעילות.",
+            "language": "he",
+            "order": 1,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "אילו תחומים צומחים בישראל?",
+            "answer": "מסעדנות, אופנה, קוסמטיקה וטכנולוגיית קמעונאות חווים צמיחה משמעותית.",
+            "language": "he",
+            "order": 2,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "האם יש לכם שותפים מקומיים בישראל?",
+            "answer": "כן, יש לנו רשת חזקה של שותפים מקומיים: עורכי דין, רואי חשבון, סוכני נדל\"ן ואנשי מקצוע בתחום הקמעונאות.",
+            "language": "he",
+            "order": 3,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "מהם התעריפים שלכם?",
+            "answer": "התעריפים שלנו משתנים בהתאם למורכבות הפרויקט. צרו איתנו קשר לקבלת הצעת מחיר מותאמת אישית בחינם.",
+            "language": "he",
+            "order": 4,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
     ]
     
     result = await db.blog_faq.insert_many(default_faq)
     
     return {
         "success": True,
-        "message": f"{len(result.inserted_ids)} FAQ items created",
+        "message": f"{len(result.inserted_ids)} FAQ items created (FR, EN, HE)",
+        "seeded": len(result.inserted_ids)
+    }
+
+
+# ==========================================
+# SEED ARTICLES IN 3 LANGUAGES
+# ==========================================
+
+@router.post("/admin/seed-all-languages")
+async def seed_articles_all_languages(user: Dict = Depends(get_current_user)):
+    """
+    Seed articles in all 3 languages (FR, EN, HE).
+    Clears existing articles first.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    # Clear existing articles
+    await db.blog_articles.delete_many({})
+    
+    now = datetime.now(timezone.utc)
+    
+    articles = [
+        # ============ FRENCH ============
+        {
+            "title": "L'IA dans le retail israélien en 2026",
+            "slug": "ia-retail-israelien-2026",
+            "excerpt": "Comment l'intelligence artificielle transforme l'expérience client dans les centres commerciaux de Tel Aviv.",
+            "content": """
+                <h2>L'Intelligence Artificielle Révolutionne le Commerce</h2>
+                <p>En 2026, les centres commerciaux israéliens sont à la pointe de l'innovation technologique. L'IA est désormais omniprésente dans l'expérience d'achat.</p>
+                <h3>Personnalisation en Temps Réel</h3>
+                <p>Les systèmes d'IA analysent les comportements d'achat pour proposer des recommandations personnalisées instantanément. Chaque visiteur reçoit une expérience unique adaptée à ses préférences.</p>
+                <h3>Gestion des Stocks Intelligente</h3>
+                <p>Les algorithmes prédictifs permettent une gestion optimale des inventaires, réduisant le gaspillage de 40% et améliorant la disponibilité des produits.</p>
+                <h3>L'Avenir du Retail</h3>
+                <p>Israël se positionne comme leader mondial de l'innovation retail, attirant les marques internationales souhaitant tester les technologies de demain.</p>
+            """,
+            "category": "Retail Tech",
+            "image_url": "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800",
+            "language": "fr",
+            "published": True,
+            "tags": ["IA", "Retail", "Innovation", "Tel Aviv"],
+            "author": "IGV Team",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        {
+            "title": "Ouvrir son réseau en Israël : Guide Complet",
+            "slug": "ouvrir-reseau-israel-guide",
+            "excerpt": "Les étapes clés pour réussir son implantation de franchise sur le marché local.",
+            "content": """
+                <h2>Réussir son Expansion en Israël</h2>
+                <p>Le marché israélien offre des opportunités uniques pour les franchises internationales. Voici les étapes essentielles pour réussir.</p>
+                <h3>1. Étude de Marché Approfondie</h3>
+                <p>Comprendre les spécificités culturelles et commerciales du marché local est primordial. Le consommateur israélien est exigeant et connecté.</p>
+                <h3>2. Trouver le Bon Partenaire Local</h3>
+                <p>Un master-franchisé local avec une connaissance approfondie du terrain est votre meilleur atout. IGV peut vous aider à identifier le partenaire idéal.</p>
+                <h3>3. Adapter Votre Concept</h3>
+                <p>L'adaptation aux goûts locaux est cruciale. Cela inclut le menu, les horaires, et même la communication marketing.</p>
+                <h3>4. Aspects Juridiques et Fiscaux</h3>
+                <p>Le cadre réglementaire israélien a ses particularités. Un accompagnement juridique spécialisé est recommandé.</p>
+            """,
+            "category": "Expansion",
+            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
+            "language": "fr",
+            "published": True,
+            "tags": ["Franchise", "Expansion", "Business", "Guide"],
+            "author": "IGV Team",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        {
+            "title": "L'essor des Food Courts Premium",
+            "slug": "essor-food-courts-premium",
+            "excerpt": "Analyse du changement des habitudes de consommation post-2025.",
+            "content": """
+                <h2>La Révolution des Espaces de Restauration</h2>
+                <p>Les food courts traditionnels cèdent la place à des concepts premium offrant une expérience gastronomique raffinée.</p>
+                <h3>Tendances Observées en 2026</h3>
+                <ul>
+                    <li><strong>Montée en gamme</strong> : Des chefs renommés ouvrent dans les centres commerciaux</li>
+                    <li><strong>Design architectural</strong> : Espaces soignés rivalisant avec les restaurants indépendants</li>
+                    <li><strong>Produits locaux</strong> : Focus sur la durabilité et les circuits courts</li>
+                </ul>
+                <h3>Opportunités pour les Franchises</h3>
+                <p>Cette évolution ouvre de nouvelles perspectives pour les concepts de restauration haut de gamme cherchant une implantation rapide.</p>
+            """,
+            "category": "Success Story",
+            "image_url": "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=800",
+            "language": "fr",
+            "published": True,
+            "tags": ["Food Court", "Restauration", "Tendances"],
+            "author": "IGV Team",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        # ============ ENGLISH ============
+        {
+            "title": "AI in Israeli Retail in 2026",
+            "slug": "ai-israeli-retail-2026",
+            "excerpt": "How artificial intelligence is transforming the customer experience in Tel Aviv shopping centers.",
+            "content": """
+                <h2>Artificial Intelligence Revolutionizes Commerce</h2>
+                <p>In 2026, Israeli shopping centers are at the forefront of technological innovation. AI is now ubiquitous in the shopping experience.</p>
+                <h3>Real-Time Personalization</h3>
+                <p>AI systems analyze shopping behaviors to offer personalized recommendations instantly. Each visitor receives a unique experience tailored to their preferences.</p>
+                <h3>Intelligent Inventory Management</h3>
+                <p>Predictive algorithms enable optimal inventory management, reducing waste by 40% and improving product availability.</p>
+                <h3>The Future of Retail</h3>
+                <p>Israel positions itself as a global leader in retail innovation, attracting international brands wanting to test tomorrow's technologies.</p>
+            """,
+            "category": "Retail Tech",
+            "image_url": "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800",
+            "language": "en",
+            "published": True,
+            "tags": ["AI", "Retail", "Innovation", "Tel Aviv"],
+            "author": "IGV Team",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        {
+            "title": "Opening Your Network in Israel: Complete Guide",
+            "slug": "opening-network-israel-guide",
+            "excerpt": "Key steps to successfully establish your franchise in the local market.",
+            "content": """
+                <h2>Succeeding in Your Expansion to Israel</h2>
+                <p>The Israeli market offers unique opportunities for international franchises. Here are the essential steps to succeed.</p>
+                <h3>1. In-Depth Market Research</h3>
+                <p>Understanding the cultural and commercial specificities of the local market is paramount. Israeli consumers are demanding and connected.</p>
+                <h3>2. Finding the Right Local Partner</h3>
+                <p>A local master-franchisee with deep knowledge of the terrain is your best asset. IGV can help you identify the ideal partner.</p>
+                <h3>3. Adapting Your Concept</h3>
+                <p>Adaptation to local tastes is crucial. This includes menu, hours, and even marketing communication.</p>
+                <h3>4. Legal and Tax Aspects</h3>
+                <p>The Israeli regulatory framework has its particularities. Specialized legal support is recommended.</p>
+            """,
+            "category": "Expansion",
+            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
+            "language": "en",
+            "published": True,
+            "tags": ["Franchise", "Expansion", "Business", "Guide"],
+            "author": "IGV Team",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        {
+            "title": "The Rise of Premium Food Courts",
+            "slug": "rise-premium-food-courts",
+            "excerpt": "Analysis of changing consumption habits post-2025.",
+            "content": """
+                <h2>The Revolution of Dining Spaces</h2>
+                <p>Traditional food courts are giving way to premium concepts offering a refined gastronomic experience.</p>
+                <h3>Trends Observed in 2026</h3>
+                <ul>
+                    <li><strong>Upscaling</strong>: Renowned chefs opening in shopping centers</li>
+                    <li><strong>Architectural design</strong>: Carefully designed spaces rivaling independent restaurants</li>
+                    <li><strong>Local products</strong>: Focus on sustainability and short circuits</li>
+                </ul>
+                <h3>Opportunities for Franchises</h3>
+                <p>This evolution opens new perspectives for high-end restaurant concepts seeking rapid establishment.</p>
+            """,
+            "category": "Success Story",
+            "image_url": "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=800",
+            "language": "en",
+            "published": True,
+            "tags": ["Food Court", "Restaurant", "Trends"],
+            "author": "IGV Team",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        # ============ HEBREW ============
+        {
+            "title": "בינה מלאכותית בקמעונאות הישראלית ב-2026",
+            "slug": "ai-retail-israel-2026-he",
+            "excerpt": "כיצד הבינה המלאכותית משנה את חוויית הלקוח במרכזי הקניות של תל אביב.",
+            "content": """
+                <h2>הבינה המלאכותית מחוללת מהפכה במסחר</h2>
+                <p>ב-2026, מרכזי הקניות בישראל נמצאים בחזית החדשנות הטכנולוגית. הבינה המלאכותית נמצאת כעת בכל מקום בחוויית הקנייה.</p>
+                <h3>התאמה אישית בזמן אמת</h3>
+                <p>מערכות AI מנתחות התנהגויות קנייה כדי להציע המלצות מותאמות אישית באופן מיידי. כל מבקר מקבל חוויה ייחודית המותאמת להעדפותיו.</p>
+                <h3>ניהול מלאי חכם</h3>
+                <p>אלגוריתמים חזויים מאפשרים ניהול מלאי אופטימלי, מפחיתים בזבוז ב-40% ומשפרים את זמינות המוצרים.</p>
+                <h3>עתיד הקמעונאות</h3>
+                <p>ישראל ממצבת את עצמה כמובילה עולמית בחדשנות קמעונאית, ומושכת מותגים בינלאומיים המעוניינים לבחון את הטכנולוגיות של מחר.</p>
+            """,
+            "category": "Retail Tech",
+            "image_url": "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800",
+            "language": "he",
+            "published": True,
+            "tags": ["AI", "קמעונאות", "חדשנות", "תל אביב"],
+            "author": "צוות IGV",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        {
+            "title": "פתיחת רשת בישראל: מדריך מלא",
+            "slug": "opening-network-israel-guide-he",
+            "excerpt": "השלבים המרכזיים להצלחה בהקמת זיכיון בשוק המקומי.",
+            "content": """
+                <h2>להצליח בהתרחבות לישראל</h2>
+                <p>השוק הישראלי מציע הזדמנויות ייחודיות לזיכיונות בינלאומיים. הנה השלבים החיוניים להצלחה.</p>
+                <h3>1. מחקר שוק מעמיק</h3>
+                <p>הבנת המאפיינים התרבותיים והמסחריים של השוק המקומי היא קריטית. הצרכן הישראלי תובעני ומחובר.</p>
+                <h3>2. מציאת השותף המקומי הנכון</h3>
+                <p>מאסטר-זכיין מקומי עם היכרות עמוקה של השטח הוא הנכס הטוב ביותר שלכם. IGV יכולה לעזור לכם לזהות את השותף האידיאלי.</p>
+                <h3>3. התאמת הקונספט</h3>
+                <p>התאמה לטעם המקומי היא קריטית. זה כולל תפריט, שעות פעילות, ואפילו תקשורת שיווקית.</p>
+                <h3>4. היבטים משפטיים ומיסויים</h3>
+                <p>למסגרת הרגולטורית הישראלית יש מאפיינים ייחודיים. ליווי משפטי מתמחה מומלץ.</p>
+            """,
+            "category": "Expansion",
+            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
+            "language": "he",
+            "published": True,
+            "tags": ["זיכיון", "התרחבות", "עסקים", "מדריך"],
+            "author": "צוות IGV",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+        {
+            "title": "עליית פודקורטים הפרימיום",
+            "slug": "rise-premium-food-courts-he",
+            "excerpt": "ניתוח השינוי בהרגלי הצריכה לאחר 2025.",
+            "content": """
+                <h2>המהפכה במרחבי האוכל</h2>
+                <p>פודקורטים מסורתיים פינו את מקומם לקונספטים פרימיום המציעים חוויה גסטרונומית מעודנת.</p>
+                <h3>מגמות שנצפו ב-2026</h3>
+                <ul>
+                    <li><strong>שדרוג</strong>: שפים מפורסמים פותחים במרכזי קניות</li>
+                    <li><strong>עיצוב אדריכלי</strong>: חללים מעוצבים בקפידה המתחרים במסעדות עצמאיות</li>
+                    <li><strong>מוצרים מקומיים</strong>: דגש על קיימות ומעגלים קצרים</li>
+                </ul>
+                <h3>הזדמנויות לזיכיונות</h3>
+                <p>התפתחות זו פותחת אופקים חדשים לקונספטים של מסעדנות יוקרתית המחפשים התבססות מהירה.</p>
+            """,
+            "category": "Success Story",
+            "image_url": "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=800",
+            "language": "he",
+            "published": True,
+            "tags": ["פודקורט", "מסעדנות", "מגמות"],
+            "author": "צוות IGV",
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now
+        },
+    ]
+    
+    result = await db.blog_articles.insert_many(articles)
+    
+    return {
+        "success": True,
+        "message": f"{len(result.inserted_ids)} articles created (3 FR + 3 EN + 3 HE)",
         "seeded": len(result.inserted_ids)
     }
