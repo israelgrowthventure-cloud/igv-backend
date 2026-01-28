@@ -501,3 +501,226 @@ async def seed_sample_articles(user: Dict = Depends(get_current_user)):
         "message": f"{len(result.inserted_ids)} sample articles created",
         "seeded": len(result.inserted_ids)
     }
+
+
+# ==========================================
+# FAQ ENDPOINTS
+# ==========================================
+
+class FAQItem(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    answer: str = Field(..., min_length=1, max_length=2000)
+    language: str = Field(default="fr")
+    order: int = Field(default=0)
+    published: bool = Field(default=True)
+
+
+@router.get("/faq")
+async def get_faq_public(language: str = Query("fr")):
+    """
+    Get published FAQ items for public display.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    cursor = db.blog_faq.find(
+        {"language": language, "published": True}
+    ).sort("order", 1)
+    
+    items = await cursor.to_list(length=100)
+    
+    for item in items:
+        item["_id"] = str(item["_id"])
+    
+    return {"items": items}
+
+
+@router.get("/admin/faq")
+async def get_faq_admin(
+    user: Dict = Depends(get_current_user),
+    language: Optional[str] = None
+):
+    """
+    Get all FAQ items for admin.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    query = {}
+    if language:
+        query["language"] = language
+    
+    cursor = db.blog_faq.find(query).sort("order", 1)
+    items = await cursor.to_list(length=100)
+    
+    for item in items:
+        item["_id"] = str(item["_id"])
+    
+    return {"items": items}
+
+
+@router.post("/admin/faq")
+async def create_faq(
+    data: FAQItem,
+    user: Dict = Depends(get_current_user)
+):
+    """
+    Create a new FAQ item.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get max order
+    max_order_doc = await db.blog_faq.find_one(
+        {"language": data.language},
+        sort=[("order", -1)]
+    )
+    max_order = max_order_doc["order"] + 1 if max_order_doc else 0
+    
+    faq_doc = {
+        "question": data.question,
+        "answer": data.answer,
+        "language": data.language,
+        "order": data.order or max_order,
+        "published": data.published,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user.get("email")
+    }
+    
+    result = await db.blog_faq.insert_one(faq_doc)
+    faq_doc["_id"] = str(result.inserted_id)
+    
+    return {"success": True, "item": faq_doc}
+
+
+@router.put("/admin/faq/{faq_id}")
+async def update_faq(
+    faq_id: str,
+    data: FAQItem,
+    user: Dict = Depends(get_current_user)
+):
+    """
+    Update a FAQ item.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    try:
+        await db.blog_faq.update_one(
+            {"_id": ObjectId(faq_id)},
+            {"$set": {
+                "question": data.question,
+                "answer": data.answer,
+                "language": data.language,
+                "order": data.order,
+                "published": data.published,
+                "updated_at": datetime.now(timezone.utc),
+                "updated_by": user.get("email")
+            }}
+        )
+    except:
+        raise HTTPException(status_code=400, detail="Invalid FAQ ID")
+    
+    return {"success": True}
+
+
+@router.delete("/admin/faq/{faq_id}")
+async def delete_faq(
+    faq_id: str,
+    user: Dict = Depends(get_current_user)
+):
+    """
+    Delete a FAQ item.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    try:
+        result = await db.blog_faq.delete_one({"_id": ObjectId(faq_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid FAQ ID")
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+    
+    return {"success": True}
+
+
+@router.post("/admin/faq/seed")
+async def seed_faq(user: Dict = Depends(get_current_user)):
+    """
+    Seed default FAQ items.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    count = await db.blog_faq.count_documents({})
+    if count > 0:
+        return {"success": False, "message": f"{count} FAQ items already exist", "seeded": 0}
+    
+    now = datetime.now(timezone.utc)
+    
+    default_faq = [
+        {
+            "question": "Comment IGV peut m'aider à m'implanter en Israël ?",
+            "answer": "IGV vous accompagne de A à Z : étude de marché, recherche de partenaires locaux, négociation de baux commerciaux et lancement opérationnel.",
+            "language": "fr",
+            "order": 0,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "Combien de temps faut-il pour ouvrir en Israël ?",
+            "answer": "En moyenne 6 à 12 mois selon la complexité du projet et le secteur d'activité.",
+            "language": "fr",
+            "order": 1,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "Quels secteurs sont porteurs en Israël ?",
+            "answer": "La restauration, la mode, les cosmétiques et le retail tech connaissent une forte croissance.",
+            "language": "fr",
+            "order": 2,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "How can IGV help me expand to Israel?",
+            "answer": "IGV supports you from A to Z: market research, local partner search, commercial lease negotiation and operational launch.",
+            "language": "en",
+            "order": 0,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        },
+        {
+            "question": "How long does it take to open in Israel?",
+            "answer": "On average 6 to 12 months depending on project complexity and industry.",
+            "language": "en",
+            "order": 1,
+            "published": True,
+            "created_at": now,
+            "updated_at": now
+        }
+    ]
+    
+    result = await db.blog_faq.insert_many(default_faq)
+    
+    return {
+        "success": True,
+        "message": f"{len(result.inserted_ids)} FAQ items created",
+        "seeded": len(result.inserted_ids)
+    }
