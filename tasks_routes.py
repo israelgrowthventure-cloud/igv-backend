@@ -19,7 +19,6 @@ from fastapi.responses import StreamingResponse
 from auth_middleware import (
     get_current_user,
     require_admin,
-    require_role,
     log_audit_event,
     get_db
 )
@@ -216,9 +215,13 @@ async def update_task(
 @router.delete("/{task_id}")
 async def delete_task(
     task_id: str,
-    user: Dict = Depends(require_role(["admin", "manager"]))
+    user: Dict = Depends(get_current_user)
 ):
     """Delete a task (admin/manager only)"""
+    # Check role
+    if user.get("role") not in ["admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Only admin or manager can delete tasks")
+    
     db = await get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -273,9 +276,13 @@ async def complete_task(
 @router.get("/export/csv")
 async def export_tasks_csv(
     status: Optional[str] = None,
-    user: Dict = Depends(require_role(["admin", "manager"]))
+    user: Dict = Depends(get_current_user)
 ):
-    """Export tasks to CSV"""
+    """Export tasks to CSV (admin/manager only)"""
+    # Check role
+    if user.get("role") not in ["admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Only admin or manager can export tasks")
+    
     db = await get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
