@@ -43,6 +43,7 @@ from gdpr_routes import router as gdpr_router
 from quota_queue_routes import router as quota_router
 from admin_user_routes import router as admin_user_router
 from cms_routes import router as cms_router  # Phase 5: CMS, Media & Auth
+from blog_routes import router as blog_router  # Blog articles CRUD
 
 # Mission 12 Points - Advanced CRM Features
 from quality_routes import router as quality_router  # Point 2: Quality/Duplicates
@@ -1063,6 +1064,13 @@ try:
     logging.info("✓ CMS/Media/Auth router registered")
 except Exception as e:
     logging.error(f"✗ Failed to load cms_routes: {e}")
+
+# Blog Articles
+try:
+    app.include_router(blog_router)
+    logging.info("✓ Blog router registered")
+except Exception as e:
+    logging.error(f"✗ Failed to load blog_routes: {e}")
 
 # Include new routers only if loaded successfully
 if INVOICE_ROUTER_LOADED and invoice_router:
