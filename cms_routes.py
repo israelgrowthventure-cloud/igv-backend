@@ -331,6 +331,16 @@ async def list_media(
         }
     }
 
+# Alias for /admin/media/list (frontend compatibility)
+@router.get("/admin/media/list")
+async def list_media_alias(
+    page: int = 1,
+    limit: int = 20,
+    user: Dict = Depends(get_current_user)
+):
+    """Alias for /admin/media - frontend compatibility"""
+    return await list_media(page=page, limit=limit, user=user)
+
 @router.delete("/admin/media/{filename}")
 async def delete_media(
     filename: str,
