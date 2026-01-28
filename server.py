@@ -114,9 +114,14 @@ ADMIN_EMAIL = os.getenv('ADMIN_EMAIL')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
 BOOTSTRAP_TOKEN = os.getenv('BOOTSTRAP_TOKEN')
 
-# MongoDB connection with environment variable aliases (Render compatibility)
-mongo_url = os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+# MongoDB - use MONGODB_URI (standard)
+mongo_url = os.getenv('MONGODB_URI')
 db_name = os.getenv('DB_NAME', 'igv_production')
+
+if not mongo_url:
+    logging.error("❌ CRITICAL: MONGODB_URI must be set")
+    if os.getenv('ENVIRONMENT', 'development') == 'production':
+        raise ValueError("Missing MONGODB_URI")
 
 # Initialize MongoDB client (optional - will be None if not configured)
 client = None
@@ -142,6 +147,25 @@ if mongo_url:
         mongodb_status = "error"
 else:
     logging.debug("MongoDB env vars not set locally - will be configured in production")
+
+# Verify MongoDB connection helper
+async def verify_mongodb_connection():
+    """Verify MongoDB connection"""
+    if not mongo_url:
+        logging.warning("⚠️ MongoDB not configured")
+        return False
+    if db is None:
+        logging.error("❌ MongoDB client not initialized")
+        return False
+    try:
+        await db.command('ping')
+        logging.info("✓ MongoDB connection verified")
+        return True
+    except Exception as e:
+        logging.error(f"❌ MongoDB failed: {e}")
+        if os.getenv('ENVIRONMENT', 'development') == 'production':
+            raise
+        return False
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -178,32 +202,27 @@ async def root():
     return {"message": "IGV Backend API", "status": "running"}
 
 # CORS configuration - MUST be configured BEFORE routers
-# Production domains explicitly allowed
-cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS') or os.getenv('CORS_ORIGINS', '')
+# CORS origins from environment variable (comma-separated)
+cors_origins_from_env = os.getenv('CORS_ORIGINS', '')
 
-# Default production origins
-DEFAULT_ORIGINS = [
-    "https://israelgrowthventure.com",
-    "https://www.israelgrowthventure.com",
-    "https://admin.israelgrowthventure.com",
-    "https://cms.israelgrowthventure.com",
-    "https://crm.israelgrowthventure.com",
-    "http://localhost:3000",  # Local development
-    "http://127.0.0.1:3000",   # Local development
-    "http://localhost:5173",  # Vite dev server
-    "http://127.0.0.1:5173"   # Vite dev server
-]
-
-# Merge environment origins with defaults (global variable for exception handlers)
-if cors_origins_env and cors_origins_env != '*':
-    ALLOWED_ORIGINS = list(set(DEFAULT_ORIGINS + cors_origins_env.split(',')))
+if cors_origins_from_env:
+    allowed_origins = [origin.strip() for origin in cors_origins_from_env.split(',') if origin.strip()]
+    logging.info(f"✓ CORS origins loaded from env: {allowed_origins}")
 else:
-    ALLOWED_ORIGINS = DEFAULT_ORIGINS
+    if os.getenv('ENVIRONMENT', 'development') == 'development':
+        allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+        logging.warning("⚠️ CORS using dev defaults")
+    else:
+        logging.error("❌ CRITICAL: CORS_ORIGINS must be set in production")
+        raise ValueError("Missing CORS_ORIGINS in production")
+
+# Global variable for exception handlers
+ALLOWED_ORIGINS = allowed_origins
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -1092,6 +1111,21 @@ if EMAIL_TEMPLATES_SEED_LOADED and email_templates_seed_router:
 else:
     logging.warning("✗ Email templates seed router not registered (import failed)")
 
+# New routers: Tasks and Client Portal
+try:
+    from tasks_routes import router as tasks_router
+    app.include_router(tasks_router)
+    logging.info("✓ Tasks router registered")
+except Exception as e:
+    logging.error(f"✗ Failed to load tasks_routes: {e}")
+
+try:
+    from client_routes import router as client_router
+    app.include_router(client_router)
+    logging.info("✓ Client portal router registered")
+except Exception as e:
+    logging.error(f"✗ Failed to load client_routes: {e}")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1102,6 +1136,11 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_db_init():
     """Create MongoDB indexes for performance on startup"""
+    db_connected = await verify_mongodb_connection()
+    if not db_connected:
+        logging.warning("⚠️ Skipping DB init")
+        return
+    
     if db is not None:
         try:
             # Leads indexes
@@ -1129,8 +1168,9 @@ async def startup_db_init():
             # Create default admin if not exists
             await create_default_admin_if_not_exists()
             
-            # Cleanup other users - keep only admin
-            await cleanup_other_users()
+            # ❌ DISABLED: Was preventing multi-user setup
+            # await cleanup_other_users()
+            logging.info("✓ Multi-user mode enabled")
             
         except Exception as e:
             logging.warning(f"Index creation skipped: {e}")
@@ -1141,8 +1181,13 @@ async def create_default_admin_if_not_exists():
     if db is None:
         return
     
-    admin_email = "postmaster@israelgrowthventure.com"
-    admin_password = "Admin@igv2025#"
+    # Admin credentials from environment variables (REQUIRED)
+    admin_email = os.getenv('ADMIN_EMAIL')
+    admin_password = os.getenv('ADMIN_PASSWORD')
+    
+    if not admin_email or not admin_password:
+        logging.error("❌ CRITICAL: ADMIN_EMAIL and ADMIN_PASSWORD must be set")
+        raise ValueError("Missing required admin credentials in environment")
     
     try:
         # Check in crm_users first
@@ -1199,26 +1244,27 @@ async def create_default_admin_if_not_exists():
         logging.error(f"Failed to create default admin: {e}")
 
 
-async def cleanup_other_users():
-    """Remove all users except the admin postmaster@israelgrowthventure.com"""
-    if db is None:
-        return
-    
-    admin_email = "postmaster@israelgrowthventure.com"
-    
-    try:
-        # Delete all crm_users except admin
-        result = await db.crm_users.delete_many({"email": {"$ne": admin_email}})
-        if result.deleted_count > 0:
-            logging.info(f"✓ Cleaned up {result.deleted_count} users from crm_users (kept only {admin_email})")
-        
-        # Also clean legacy users except admin
-        result_legacy = await db.users.delete_many({"email": {"$ne": admin_email}})
-        if result_legacy.deleted_count > 0:
-            logging.info(f"✓ Cleaned up {result_legacy.deleted_count} users from legacy users collection")
-            
-    except Exception as e:
-        logging.error(f"Failed to cleanup users: {e}")
+# ❌ DISABLED FUNCTION - Was preventing multi-user setup
+# async def cleanup_other_users():
+#     """Remove all users except the admin postmaster@israelgrowthventure.com"""
+#     if db is None:
+#         return
+#     
+#     admin_email = "postmaster@israelgrowthventure.com"
+#     
+#     try:
+#         # Delete all crm_users except admin
+#         result = await db.crm_users.delete_many({"email": {"$ne": admin_email}})
+#         if result.deleted_count > 0:
+#             logging.info(f"✓ Cleaned up {result.deleted_count} users from crm_users (kept only {admin_email})")
+#         
+#         # Also clean legacy users except admin
+#         result_legacy = await db.users.delete_many({"email": {"$ne": admin_email}})
+#         if result_legacy.deleted_count > 0:
+#             logging.info(f"✓ Cleaned up {result_legacy.deleted_count} users from legacy users collection")
+#             
+#     except Exception as e:
+#         logging.error(f"Failed to cleanup users: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

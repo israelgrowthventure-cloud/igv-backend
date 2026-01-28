@@ -26,7 +26,8 @@ from auth_middleware import (
     get_db
 )
 
-router = APIRouter(prefix="/api/crm")
+# No prefix - added by server.py
+router = APIRouter()
 
 
 # ==========================================
