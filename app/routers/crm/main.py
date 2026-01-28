@@ -26,8 +26,8 @@ from auth_middleware import (
     get_db
 )
 
-# No prefix - added by server.py
-router = APIRouter()
+# CRM Router with /api/crm prefix
+router = APIRouter(prefix="/api/crm", tags=["CRM"])
 
 
 # ==========================================
@@ -1004,27 +1004,8 @@ async def update_dispatch_settings(data: Dict[str, Any] = Body(...), user: Dict 
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/settings/users")
-async def get_crm_users_list(user: Dict = Depends(get_current_user)):
-    """Get CRM users list for assignment"""
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # Get active CRM users
-        users_cursor = current_db.crm_users.find(
-            {"is_active": True},
-            {"email": 1, "name": 1, "role": 1, "_id": 0}
-        )
-        
-        users = await users_cursor.to_list(100)
-        
-        return {"success": True, "data": users}
-        
-    except Exception as e:
-        logging.error(f"[CRM Settings] Error getting users: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# NOTE: Route /settings/users is defined below at line ~1492
+# This duplicate has been removed to avoid conflicts
 
 
 @router.get("/settings/tags")
@@ -1234,16 +1215,73 @@ async def admin_get_leads(limit: int = Query(10, le=200), skip: int = 0, user: D
 
 @router.get("/kpi/response-times")
 async def get_response_times_kpi(user: Dict = Depends(get_current_user)):
-    """Get average response times by status"""
+    """Get average response times using MongoDB aggregation (optimized)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
+    
     try:
+        # Date limite: 30 derniers jours
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        
         pipeline = [
-            {"$group": {"_id": "$status", "avg_response_time": {"$avg": "$response_time"}}},
-            {"$sort": {"avg_response_time": 1}}
+            # Filtre: leads des 30 derniers jours
+            {
+                "$match": {
+                    "created_at": {"$gte": thirty_days_ago}
+                }
+            },
+            # Jointure avec activités
+            {
+                "$lookup": {
+                    "from": "crm_activities",
+                    "localField": "lead_id",
+                    "foreignField": "lead_id",
+                    "as": "activities"
+                }
+            },
+            # Filtre: leads ayant au moins 1 activité
+            {
+                "$match": {
+                    "activities.0": {"$exists": True}
+                }
+            },
+            # Calcul: temps de première réponse
+            {
+                "$project": {
+                    "status": 1,
+                    "lead_created": "$created_at",
+                    "first_activity": {"$min": "$activities.created_at"},
+                    "response_time_ms": {
+                        "$subtract": [
+                            {"$min": "$activities.created_at"},
+                            "$created_at"
+                        ]
+                    }
+                }
+            },
+            # Agrégation: moyenne par statut
+            {
+                "$group": {
+                    "_id": "$status",
+                    "avg_response_time_ms": {"$avg": "$response_time_ms"},
+                    "total_leads": {"$sum": 1}
+                }
+            },
+            {
+                "$sort": {"avg_response_time_ms": 1}
+            }
         ]
-        result = await current_db.leads.aggregate(pipeline).to_list(None)
+        
+        result = await current_db.crm_leads.aggregate(pipeline).to_list(None)
+        
+        # Convert milliseconds to hours
+        for item in result:
+            if item.get("avg_response_time_ms"):
+                item["avg_response_time_hours"] = round(item["avg_response_time_ms"] / (1000 * 60 * 60), 2)
+            else:
+                item["avg_response_time_hours"] = 0
+        
         return {"success": True, "data": result}
     except Exception as e:
         logging.error(f"KPI response-times error: {e}")
