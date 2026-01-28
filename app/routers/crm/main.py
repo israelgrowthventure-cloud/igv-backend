@@ -1538,7 +1538,10 @@ async def get_crm_users(user: Dict = Depends(get_current_user)):
         for u in users:
             u["_id"] = str(u["_id"])
             u.pop("password", None)
-        return {"success": True, "data": users}
+            # Ensure name exists for backward compatibility
+            if not u.get("name") and (u.get("first_name") or u.get("last_name")):
+                u["name"] = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
+        return {"success": True, "users": users}
     except Exception as e:
         logging.error(f"Get users error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1555,9 +1558,17 @@ async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_
         email = data.get("email")
         password = data.get("password")
         role = data.get("role", "viewer")
+        name = data.get("name", "")
+        first_name = data.get("first_name", "")
+        last_name = data.get("last_name", "")
+        is_active = data.get("is_active", True)
         
         if not email or not password:
             raise HTTPException(status_code=400, detail="Email and password required")
+        
+        # Use name if provided, otherwise build from first_name + last_name
+        if not name and (first_name or last_name):
+            name = f"{first_name} {last_name}".strip()
         
         existing = await current_db.crm_users.find_one({"email": email})
         if existing:
@@ -1568,6 +1579,10 @@ async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_
             "email": email,
             "password": hashed_password,
             "role": role,
+            "name": name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "is_active": is_active,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
@@ -1575,7 +1590,7 @@ async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_
         new_user["_id"] = str(result.inserted_id)
         new_user.pop("password")
         
-        await log_audit_event(current_db, "user_created", admin["email"], {"user_email": email, "role": role})
+        await log_audit_event(current_db, "user_created", admin["email"], {"user_email": email, "role": role, "name": name})
         return {"success": True, "data": new_user}
     except Exception as e:
         logging.error(f"Create user error: {e}")
@@ -1594,6 +1609,17 @@ async def update_crm_user(user_id: str, data: Dict = Body(...), admin: Dict = De
             update_data["email"] = data["email"]
         if "role" in data:
             update_data["role"] = data["role"]
+        if "name" in data:
+            update_data["name"] = data["name"]
+        if "first_name" in data:
+            update_data["first_name"] = data["first_name"]
+        if "last_name" in data:
+            update_data["last_name"] = data["last_name"]
+        if "is_active" in data:
+            update_data["is_active"] = data["is_active"]
+        if "password" in data and data["password"]:
+            from passlib.hash import bcrypt
+            update_data["password"] = bcrypt.hash(data["password"])
         
         result = await current_db.crm_users.update_one(
             {"_id": ObjectId(user_id)},
