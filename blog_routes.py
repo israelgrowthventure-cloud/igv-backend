@@ -33,6 +33,8 @@ class ArticleCreate(BaseModel):
     published: bool = Field(default=False)
     tags: List[str] = Field(default_factory=list)
     author: Optional[str] = None
+    translate_en: bool = Field(default=False)
+    translate_he: bool = Field(default=False)
 
 
 class ArticleUpdate(BaseModel):
@@ -46,6 +48,94 @@ class ArticleUpdate(BaseModel):
     published: Optional[bool] = None
     tags: Optional[List[str]] = None
     author: Optional[str] = None
+
+
+# ==========================================
+# SIMPLE TRANSLATION DICTIONARY
+# ==========================================
+TRANSLATIONS_FR_EN = {
+    "L'IA": "AI",
+    "intelligence artificielle": "artificial intelligence",
+    "retail": "retail",
+    "israélien": "Israeli",
+    "Israël": "Israel",
+    "centre commercial": "shopping center",
+    "centres commerciaux": "shopping centers",
+    "Tel Aviv": "Tel Aviv",
+    "experience client": "customer experience",
+    "franchise": "franchise",
+    "marché": "market",
+    "entreprise": "business",
+    "entreprises": "businesses",
+    "Comment": "How",
+    "Pourquoi": "Why",
+    "partenaire": "partner",
+    "partenaires": "partners",
+    "accompagne": "supports",
+    "étude de marché": "market research",
+    "négociation": "negotiation",
+    "bail": "lease",
+    "baux": "leases",
+    "lancement": "launch",
+    "mois": "months",
+    "ans": "years",
+    "secteur": "sector",
+    "restauration": "food service",
+    "mode": "fashion",
+    "cosmétiques": "cosmetics",
+    "local": "local",
+    "locaux": "local",
+}
+
+TRANSLATIONS_FR_HE = {
+    "L'IA": "בינה מלאכותית",
+    "intelligence artificielle": "בינה מלאכותית",
+    "retail": "קמעונאות",
+    "israélien": "ישראלי",
+    "Israël": "ישראל",
+    "centre commercial": "מרכז קניות",
+    "centres commerciaux": "מרכזי קניות",
+    "Tel Aviv": "תל אביב",
+    "experience client": "חוויית לקוח",
+    "franchise": "זיכיון",
+    "marché": "שוק",
+    "entreprise": "עסק",
+    "entreprises": "עסקים",
+    "Comment": "כיצד",
+    "Pourquoi": "מדוע",
+    "partenaire": "שותף",
+    "partenaires": "שותפים",
+    "accompagne": "מלווה",
+    "étude de marché": "מחקר שוק",
+    "négociation": "משא ומתן",
+    "bail": "חוזה שכירות",
+    "baux": "חוזי שכירות",
+    "lancement": "השקה",
+    "mois": "חודשים",
+    "ans": "שנים",
+    "secteur": "ענף",
+    "restauration": "מסעדנות",
+    "mode": "אופנה",
+    "cosmétiques": "קוסמטיקה",
+    "local": "מקומי",
+    "locaux": "מקומיים",
+}
+
+
+def simple_translate(text: str, target_lang: str) -> str:
+    """Simple translation using dictionary - for basic translations"""
+    if not text:
+        return text
+    
+    result = text
+    if target_lang == "en":
+        for fr, en in TRANSLATIONS_FR_EN.items():
+            result = result.replace(fr, en)
+    elif target_lang == "he":
+        for fr, he in TRANSLATIONS_FR_HE.items():
+            result = result.replace(fr, he)
+    
+    return result
 
 
 def generate_slug(title: str) -> str:
@@ -212,6 +302,7 @@ async def create_article(
 ):
     """
     Create a new blog article.
+    If translate_en or translate_he is True, also creates translated versions.
     """
     db = get_db()
     if db is None:
@@ -248,10 +339,62 @@ async def create_article(
     result = await db.blog_articles.insert_one(article_doc)
     article_doc["_id"] = str(result.inserted_id)
     
+    # Auto-translation logic
+    translations_created = []
+    
+    if data.translate_en and data.language == "fr":
+        # Create English version
+        en_doc = {
+            "title": simple_translate(data.title, "en"),
+            "slug": slug,  # Same slug, different language
+            "excerpt": simple_translate(data.excerpt, "en"),
+            "content": simple_translate(data.content, "en"),
+            "category": data.category,
+            "image_url": data.image_url,
+            "language": "en",
+            "published": data.published,
+            "tags": data.tags,
+            "author": data.author or user.get("email", "Admin"),
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "created_by": user.get("email"),
+            "translated_from": str(result.inserted_id)
+        }
+        await db.blog_articles.insert_one(en_doc)
+        translations_created.append("en")
+    
+    if data.translate_he and data.language == "fr":
+        # Create Hebrew version
+        he_doc = {
+            "title": simple_translate(data.title, "he"),
+            "slug": slug,  # Same slug, different language
+            "excerpt": simple_translate(data.excerpt, "he"),
+            "content": simple_translate(data.content, "he"),
+            "category": data.category,
+            "image_url": data.image_url,
+            "language": "he",
+            "published": data.published,
+            "tags": data.tags,
+            "author": data.author or user.get("email", "Admin"),
+            "views": 0,
+            "created_at": now,
+            "updated_at": now,
+            "created_by": user.get("email"),
+            "translated_from": str(result.inserted_id)
+        }
+        await db.blog_articles.insert_one(he_doc)
+        translations_created.append("he")
+    
+    message = "Article created successfully"
+    if translations_created:
+        message += f" + translations: {', '.join(translations_created)}"
+    
     return {
         "success": True,
-        "message": "Article created successfully",
-        "article": article_doc
+        "message": message,
+        "article": article_doc,
+        "translations_created": translations_created
     }
 
 
@@ -513,6 +656,8 @@ class FAQItem(BaseModel):
     language: str = Field(default="fr")
     order: int = Field(default=0)
     published: bool = Field(default=True)
+    translate_en: bool = Field(default=False)
+    translate_he: bool = Field(default=False)
 
 
 @router.get("/faq")
@@ -568,6 +713,7 @@ async def create_faq(
 ):
     """
     Create a new FAQ item.
+    If translate_en or translate_he is True, also creates translated versions.
     """
     db = get_db()
     if db is None:
@@ -596,7 +742,58 @@ async def create_faq(
     result = await db.blog_faq.insert_one(faq_doc)
     faq_doc["_id"] = str(result.inserted_id)
     
-    return {"success": True, "item": faq_doc}
+    # Auto-translation logic for FAQ
+    translations_created = []
+    
+    if data.translate_en and data.language == "fr":
+        # Get max order for English
+        max_order_en = await db.blog_faq.find_one(
+            {"language": "en"},
+            sort=[("order", -1)]
+        )
+        order_en = max_order_en["order"] + 1 if max_order_en else 0
+        
+        en_doc = {
+            "question": simple_translate(data.question, "en"),
+            "answer": simple_translate(data.answer, "en"),
+            "language": "en",
+            "order": order_en,
+            "published": data.published,
+            "created_at": now,
+            "updated_at": now,
+            "created_by": user.get("email"),
+            "translated_from": str(result.inserted_id)
+        }
+        await db.blog_faq.insert_one(en_doc)
+        translations_created.append("en")
+    
+    if data.translate_he and data.language == "fr":
+        # Get max order for Hebrew
+        max_order_he = await db.blog_faq.find_one(
+            {"language": "he"},
+            sort=[("order", -1)]
+        )
+        order_he = max_order_he["order"] + 1 if max_order_he else 0
+        
+        he_doc = {
+            "question": simple_translate(data.question, "he"),
+            "answer": simple_translate(data.answer, "he"),
+            "language": "he",
+            "order": order_he,
+            "published": data.published,
+            "created_at": now,
+            "updated_at": now,
+            "created_by": user.get("email"),
+            "translated_from": str(result.inserted_id)
+        }
+        await db.blog_faq.insert_one(he_doc)
+        translations_created.append("he")
+    
+    message = "FAQ créée avec succès"
+    if translations_created:
+        message += f" + traductions: {', '.join(translations_created)}"
+    
+    return {"success": True, "item": faq_doc, "message": message, "translations_created": translations_created}
 
 
 @router.put("/admin/faq/{faq_id}")
