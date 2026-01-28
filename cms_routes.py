@@ -1,7 +1,7 @@
 # CMS, Media Library, and Password Recovery Routes
 # Phase 5: Advanced CMS Features
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional, Dict, Any
@@ -28,6 +28,35 @@ PASSWORD_RESET_EXPIRATION_HOURS = 1
 
 # CMS Password (separate from CRM login)
 CMS_PASSWORD = os.getenv('CMS_PASSWORD')
+
+
+# ==========================================
+# OPTIONAL AUTH DEPENDENCY
+# ==========================================
+
+async def get_current_user_optional(authorization: Optional[str] = Header(None)) -> Optional[Dict]:
+    """
+    Optional authentication - returns user if valid token, None otherwise.
+    Used for endpoints that accept both token and user auth.
+    """
+    if not authorization:
+        return None
+    
+    try:
+        # Check for Bearer token
+        if authorization.startswith('Bearer '):
+            token = authorization[7:]
+        else:
+            return None
+            
+        if not JWT_SECRET:
+            return None
+            
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except:
+        return None
+
 
 # ==========================================
 # CMS ACCESS PROTECTION
@@ -668,17 +697,18 @@ PAGES_CONTENT = {
 }
 
 @router.post("/cms/init-pages")
-async def init_cms_pages(token: str):
+async def init_cms_pages(token: str = None, user: Dict = Depends(get_current_user_optional)):
     """
     Initialize CMS with default page content.
-    Protected by BOOTSTRAP_TOKEN.
+    Protected by BOOTSTRAP_TOKEN OR admin authentication.
     Call this endpoint once after deployment to populate the CMS.
     """
-    if not BOOTSTRAP_TOKEN:
-        raise HTTPException(status_code=500, detail="BOOTSTRAP_TOKEN not configured")
+    # Allow access via BOOTSTRAP_TOKEN OR authenticated admin user
+    is_authenticated_admin = user is not None
+    is_valid_token = BOOTSTRAP_TOKEN and token == BOOTSTRAP_TOKEN
     
-    if token != BOOTSTRAP_TOKEN:
-        raise HTTPException(status_code=403, detail="Invalid token")
+    if not is_authenticated_admin and not is_valid_token:
+        raise HTTPException(status_code=403, detail="Authentication required - login as admin or provide valid token")
     
     db = get_db()
     if db is None:
