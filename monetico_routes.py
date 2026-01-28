@@ -1,23 +1,5 @@
 """
-Monetico P# 0) Vérifie que tu es bien à la racine du repo
-pwd
-
-# 1) Liste ce qu'il y a dans audit_out
-Get-ChildItem .\audit_out -Force | Select Name,Length,LastWriteTime | Format-Table -Auto
-
-# 2) Cherche le fichier (peu importe où il est)
-Get-ChildItem . -Recurse -Force -File -Filter "RAPPORT_REPARATION_CRM_LIVE.md" | Select FullName,LastWriteTime
-
-# 3) Cherche tout ce qui ressemble au nom (au cas où il a ajouté une date)
-Get-ChildItem . -Recurse -Force -File | Where-Object { $_.Name -match "RAPPORT_.*REPARATION|REPARATION_.*CRM|RAPPORT_.*CRM.*LIVE" } |
-  Select FullName,LastWriteTime | Sort-Object LastWriteTime -Descending | Select -First 20
-
-# 4) Trouve dans le code où le script écrit le rapport (chemin exact)
-Select-String -Path .\audit_out\*.py -Pattern "RAPPORT_REPARATION|REPARATION_CRM|write_text|open\(" -List
-
-# 5) Montre les fichiers markdown récents (souvent il a écrit à la racine)
-Get-ChildItem . -Force -File -Filter "*.md" | Sort-Object LastWriteTime -Descending | Select -First 15 FullName,LastWriteTime
-yment Routes - CIC/CM Payment Integration
+Monetico Payment Routes - CIC/CM Payment Integration
 Production-ready with signature verification, webhooks, payment tracking
 """
 
@@ -310,25 +292,6 @@ async def init_payment(
     
     # Use the public endpoint logic
     return await init_payment_public(payment_request)
-    
-    # Timeline event
-    await current_db.timeline_events.insert_one({
-        "entity_type": "payment",
-        "entity_id": str(result.inserted_id),
-        "event_type": "payment_initiated",
-        "description": f"Payment initiated: {payment_request.reference} - {payment_request.amount} {payment_request.currency}",
-        "user_email": user["email"],
-        "created_at": datetime.now(timezone.utc)
-    })
-    
-    logging.info(f"Payment initiated: {payment_id} - {payment_request.amount} {payment_request.currency}")
-    
-    return {
-        "success": True,
-        "payment_id": payment_id,
-        "monetico_endpoint": MONETICO_ENDPOINT,
-        "form_data": form_data
-    }
 
 
 @router.post("/notify")
