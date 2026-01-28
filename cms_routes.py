@@ -113,6 +113,32 @@ class PageContentUpdate(BaseModel):
     content: Dict[str, Any]
     version: Optional[int] = None
 
+# IMPORTANT: /pages/list MUST be declared BEFORE /pages/{page}
+# to prevent FastAPI from matching "list" as a page parameter
+@router.get("/pages/list")
+async def list_pages(user: Dict = Depends(get_current_user)):
+    """
+    List all pages that have content in the CMS.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    # Get distinct pages
+    pages = await db.page_content.distinct("page")
+    
+    # For each page, get the latest version for each language
+    page_info = []
+    for page in pages:
+        languages = await db.page_content.distinct("language", {"page": page})
+        page_info.append({
+            "page": page,
+            "languages": languages,
+            "url": f"/{page}" if page != 'home' else "/"
+        })
+    
+    return {"pages": page_info}
+
 @router.get("/pages/{page}")
 async def get_page_content(page: str, language: str = 'fr', user: Dict = Depends(get_current_user)):
     """
@@ -212,30 +238,6 @@ async def update_page_content(
         "version": update_doc["version"],
         "updated_at": now.isoformat()
     }
-
-@router.get("/pages/list")
-async def list_pages(user: Dict = Depends(get_current_user)):
-    """
-    List all pages that have content in the CMS.
-    """
-    db = get_db()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    
-    # Get distinct pages
-    pages = await db.page_content.distinct("page")
-    
-    # For each page, get the latest version for each language
-    page_info = []
-    for page in pages:
-        languages = await db.page_content.distinct("language", {"page": page})
-        page_info.append({
-            "page": page,
-            "languages": languages,
-            "url": f"/{page}" if page != 'home' else "/"
-        })
-    
-    return {"pages": page_info}
 
 # ==========================================
 # MEDIA LIBRARY ENDPOINTS
