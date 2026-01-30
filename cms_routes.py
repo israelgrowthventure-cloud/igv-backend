@@ -113,6 +113,12 @@ class PageContentUpdate(BaseModel):
     content: Dict[str, Any]
     version: Optional[int] = None
 
+class PageContentBulkUpdate(BaseModel):
+    """Bulk update for flat structure (frontend compatibility)"""
+    page: str
+    language: str
+    model_config = ConfigDict(extra='allow')  # Allow extra fields like hero_title, etc
+
 # IMPORTANT: /pages/list MUST be declared BEFORE /pages/{page}
 # to prevent FastAPI from matching "list" as a page parameter
 @router.get("/pages/list")
@@ -143,7 +149,7 @@ async def list_pages(user: Dict = Depends(get_current_user)):
 async def get_page_content(page: str, language: str = 'fr', user: Dict = Depends(get_current_user)):
     """
     Get content for a specific page and language.
-    Returns the full page content object.
+    Returns flat content structure for WYSIWYG editor compatibility.
     """
     db = get_db()
     if db is None:
@@ -155,14 +161,24 @@ async def get_page_content(page: str, language: str = 'fr', user: Dict = Depends
     )
     
     if not content:
+        # Return empty flat structure
         return {
             "page": page,
             "language": language,
-            "content": {},
             "version": 0,
             "last_updated": None
         }
     
+    # If flat_content exists, return it merged at root level
+    if 'flat_content' in content:
+        flat_data = content['flat_content'].copy()
+        flat_data['page'] = page
+        flat_data['language'] = language
+        flat_data['version'] = content.get('version', 0)
+        flat_data['last_updated'] = content.get('updated_at')
+        return flat_data
+    
+    # Otherwise return old structure
     return content
 
 @router.post("/pages/update")
@@ -237,6 +253,90 @@ async def update_page_content(
         "section": data.section,
         "version": update_doc["version"],
         "updated_at": now.isoformat()
+    }
+
+@router.post("/pages/update-flat")
+async def update_page_content_flat(
+    data: Dict[str, Any],
+    user: Dict = Depends(get_current_user)
+):
+    """
+    Update page content with flat structure (frontend WYSIWYG compatibility).
+    Accepts any fields like hero_title, services_title, etc.
+    
+    Request body:
+    {
+        "page": "home",
+        "language": "fr",
+        "hero_title": "Mon titre",
+        "hero_subtitle": "Mon sous-titre",
+        "services_title": "Services",
+        ...
+    }
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    # Check user permissions
+    if user['role'] not in ['admin', 'editor']:
+        raise HTTPException(status_code=403, detail="Insufficient permissions to edit content")
+    
+    # Extract page and language
+    page = data.get('page')
+    language = data.get('language')
+    
+    if not page or not language:
+        raise HTTPException(status_code=400, detail="page and language are required")
+    
+    # Get existing document
+    existing = await db.page_content.find_one(
+        {"page": page, "language": language}
+    )
+    
+    # Build flat content object (remove page, language from data)
+    content_fields = {k: v for k, v in data.items() if k not in ['page', 'language', 'version']}
+    
+    # Merge with existing content if any
+    if existing and 'flat_content' in existing:
+        existing_flat = existing['flat_content']
+        existing_flat.update(content_fields)
+        content_fields = existing_flat
+    
+    # Build update document
+    now = datetime.now(timezone.utc)
+    update_doc = {
+        "page": page,
+        "language": language,
+        "flat_content": content_fields,
+        "updated_by": user['email'],
+        "updated_at": now.isoformat(),
+        "version": (existing.get('version', 0) + 1) if existing else 1
+    }
+    
+    # Upsert the document
+    await db.page_content.update_one(
+        {"page": page, "language": language},
+        {
+            "$set": update_doc,
+            "$setOnInsert": {
+                "created_at": now.isoformat(),
+                "created_by": user['email']
+            }
+        },
+        upsert=True
+    )
+    
+    logging.info(f"CMS: {user['email']} updated {page}/{language} (flat structure)")
+    
+    return {
+        "success": True,
+        "message": "Content saved successfully",
+        "page": page,
+        "language": language,
+        "version": update_doc["version"],
+        "updated_at": now.isoformat(),
+        "content": content_fields
     }
 
 # ==========================================
