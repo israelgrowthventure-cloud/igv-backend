@@ -145,10 +145,48 @@ async def list_pages(user: Dict = Depends(get_current_user)):
     
     return {"pages": page_info}
 
+@router.get("/pages/public/{page}")
+async def get_page_content_public(page: str, language: str = 'fr'):
+    """
+    PUBLIC endpoint - Get content for a specific page and language (NO AUTH).
+    Used by public pages (Home, About, Contact, etc) to load CMS content.
+    Returns flat content structure.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    content = await db.page_content.find_one(
+        {"page": page, "language": language},
+        {"_id": 0}
+    )
+    
+    if not content:
+        # Return empty flat structure with fallbacks
+        return {
+            "page": page,
+            "language": language,
+            "version": 0,
+            "last_updated": None
+        }
+    
+    # If flat_content exists, return it merged at root level
+    if 'flat_content' in content:
+        flat_data = content['flat_content'].copy()
+        flat_data['page'] = page
+        flat_data['language'] = language
+        flat_data['version'] = content.get('version', 0)
+        flat_data['last_updated'] = content.get('updated_at')
+        return flat_data
+    
+    # Otherwise return old structure
+    return content
+
 @router.get("/pages/{page}")
 async def get_page_content(page: str, language: str = 'fr', user: Dict = Depends(get_current_user)):
     """
-    Get content for a specific page and language.
+    PROTECTED endpoint - Get content for a specific page and language (REQUIRES AUTH).
+    Used by CMS admin editor to load/edit content.
     Returns flat content structure for WYSIWYG editor compatibility.
     """
     db = get_db()
