@@ -171,6 +171,12 @@ class BookingRequest(BaseModel):
     topic: Optional[str] = "audit"
 
 
+@router.get("/version")
+def booking_version():
+    """Canary endpoint to verify deployed version."""
+    return {"version": "v4-no-attendees", "commit": "ab26d52"}
+
+
 @router.post("/book")
 async def create_booking(body: BookingRequest):
     """
