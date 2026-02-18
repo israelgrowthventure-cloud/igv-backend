@@ -122,6 +122,25 @@ async def google_connect(
     return RedirectResponse(auth_url)
 
 
+@router.get("/oauth/connect/{admin_key}", include_in_schema=False)
+async def oauth_connect_bootstrap(admin_key: str):
+    """
+    Bootstrap public — ouvrable directement dans un navigateur.
+    Vérifie admin_key dans l'URL, puis redirige vers Google consent.
+    Usage : /api/google/oauth/connect/<ADMIN_OAUTH_KEY>
+    """
+    if not ADMIN_OAUTH_KEY or admin_key != ADMIN_OAUTH_KEY:
+        raise HTTPException(403, "Forbidden")
+    flow = _get_flow()
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+        include_granted_scopes="false",
+    )
+    logger.info("[google-oauth] Bootstrap redirect via URL key.")
+    return RedirectResponse(auth_url)
+
+
 @router.get("/oauth/callback")
 async def google_oauth_callback(
     code: Optional[str] = None,
