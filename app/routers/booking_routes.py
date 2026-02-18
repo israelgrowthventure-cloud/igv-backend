@@ -47,16 +47,22 @@ def _get_calendar_service():
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
 
-        creds = service_account.Credentials.from_service_account_file(
-            SA_FILE, scopes=SCOPES
-        )
-        # NOTE: domain-wide delegation requires G Suite Workspace.
-        # For plain Gmail, do NOT use with_subject — the SA acts directly.
+        if not os.path.exists(SA_FILE):
+            logger.error(f"[booking] Service account file not found: {SA_FILE}")
+            raise HTTPException(502, "Booking service not configured (missing credentials).")
+
+        # Verify it looks like a service account (not an OAuth2 client secret)
+        with open(SA_FILE) as f:
+            raw = json.load(f)
+        if raw.get("type") != "service_account":
+            logger.error(f"[booking] Credential file is type={raw.get('type')!r}, expected 'service_account'.")
+            raise HTTPException(502, "Booking service not configured (wrong credential type).")
+
+        creds = service_account.Credentials.from_service_account_info(raw, scopes=SCOPES)
         service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         return service
-    except FileNotFoundError:
-        logger.error(f"[booking] Service account file not found: {SA_FILE}")
-        raise HTTPException(502, "Booking service not configured (missing credentials).")
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception(f"[booking] Failed to initialize Google Calendar service: {exc}")
         raise HTTPException(502, f"Booking service error: {exc}")
@@ -119,11 +125,14 @@ async def get_availability(
         }
         fb_result = service.freebusy().query(body=freebusy_body).execute()
         busy_list = fb_result.get("calendars", {}).get(CALENDAR_ID, {}).get("busy", [])
-    except HTTPException:
-        raise
+    except HTTPException as he:
+        # Calendar not configured → return empty list so UI degrades gracefully
+        logger.warning(f"[booking] Calendar not available ({he.detail}), returning empty slots.")
+        return {"slots": [], "warning": he.detail}
     except Exception as exc:
         logger.exception(f"[booking] freebusy API call failed: {exc}")
-        raise HTTPException(502, f"Could not fetch calendar availability: {exc}")
+        # Return empty list + warning instead of crashing the page
+        return {"slots": [], "warning": str(exc)}
 
     # Parse busy intervals
     busy_intervals = []
