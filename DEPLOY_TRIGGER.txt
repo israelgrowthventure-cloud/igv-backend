@@ -1,1 +1,1 @@
-Full deployment - All phases complete with fixes - Mon Jan 12 07:19:42 CST 2026
+Deploy triggered at 2026-02-18 13:43:41 to fix booking attendees issue
