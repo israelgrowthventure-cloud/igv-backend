@@ -1137,6 +1137,13 @@ try:
 except Exception as e:
     logging.error(f"✗ Failed to load client_routes: {e}")
 
+try:
+    from app.routers.booking_routes import router as booking_router
+    app.include_router(booking_router)
+    logging.info("✓ Booking router registered (/api/booking)")
+except Exception as e:
+    logging.error(f"✗ Failed to load booking_routes: {e}")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
