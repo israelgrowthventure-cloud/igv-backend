@@ -150,8 +150,11 @@ class PaymentInitRequest(BaseModel):
     amount: float
     currency: str = "EUR"
     language: str = "fr"
+    # Aliases kept for backward compat with older frontend/clients
     email: Optional[EmailStr] = None
+    customer_email: Optional[EmailStr] = None  # alias for email
     customer_name: Optional[str] = None
+    pack_type: Optional[str] = None  # e.g. "audit", "analyse" — optional label
 
 
 class MoneticopaymentWebhookData(BaseModel):
@@ -217,7 +220,7 @@ async def init_payment_public(payment_request: PaymentInitRequest):
         "currency": payment_request.currency,
         "status": PaymentStatus.INITIATED,
         "monetico_reference": payment_reference,
-        "client_email": payment_request.email or "contact@israelgrowthventure.com",
+        "client_email": payment_request.customer_email or payment_request.email or "contact@israelgrowthventure.com",
         "client_name": payment_request.customer_name or "Client IGV",
         "return_url": MONETICO_RETURN_URL,
         "notify_url": MONETICO_NOTIFY_URL,
