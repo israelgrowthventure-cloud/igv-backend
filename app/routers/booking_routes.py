@@ -26,6 +26,9 @@ router = APIRouter(prefix="/api/booking", tags=["booking"])
 
 # ── Constants ────────────────────────────────────────────────────────────────
 CALENDAR_ID        = os.environ.get("BOOKING_CALENDAR_ID", "israel.growth.venture@gmail.com")
+# The IGV Gmail calendar must be SHARED (edit access) with the service account email
+# (visible in the service account JSON as "client_email").
+# Share it in Google Calendar settings → "Share with specific people or groups".
 SA_FILE            = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "/etc/secrets/google_service_account.json")
 IGV_EMAIL          = "israel.growth.venture@gmail.com"
 SCOPES             = [
@@ -47,9 +50,9 @@ def _get_calendar_service():
         creds = service_account.Credentials.from_service_account_file(
             SA_FILE, scopes=SCOPES
         )
-        # Domain-wide delegation so the service account can act as the calendar owner
-        delegated = creds.with_subject(IGV_EMAIL)
-        service = build("calendar", "v3", credentials=delegated, cache_discovery=False)
+        # NOTE: domain-wide delegation requires G Suite Workspace.
+        # For plain Gmail, do NOT use with_subject — the SA acts directly.
+        service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         return service
     except FileNotFoundError:
         logger.error(f"[booking] Service account file not found: {SA_FILE}")
