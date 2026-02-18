@@ -102,6 +102,7 @@ def _get_flow():
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+@router.get("/oauth/start")
 @router.get("/connect")
 async def google_connect(
     _admin=Depends(_require_admin),
@@ -109,6 +110,7 @@ async def google_connect(
     """
     Generate the Google OAuth consent URL and redirect the admin to it.
     access_type=offline + prompt=consent ensures we get a refresh_token.
+    Accessible via /api/google/oauth/start or /api/google/connect.
     """
     flow = _get_flow()
     auth_url, _ = flow.authorization_url(
