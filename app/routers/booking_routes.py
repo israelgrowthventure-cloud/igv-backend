@@ -204,10 +204,8 @@ async def create_booking(body: BookingRequest):
             "dateTime": end_dt.isoformat(),
             "timeZone": "Asia/Jerusalem",
         },
-        "attendees": [
-            {"email": body.email,  "displayName": attendee_name},
-            {"email": IGV_EMAIL,   "displayName": "Israel Growth Venture"},
-        ],
+        # NOTE: Service accounts on plain Gmail cannot use `attendees`.
+        # We notify the client via email separately (see aiosmtplib below).
         "conferenceData": {
             "createRequest": {
                 "requestId":             f"igv-{int(start_dt.timestamp())}",
@@ -217,11 +215,9 @@ async def create_booking(body: BookingRequest):
         "reminders": {
             "useDefault": False,
             "overrides":  [
-                {"method": "email",  "minutes": 24 * 60},
                 {"method": "popup",  "minutes": 15},
             ],
         },
-        "sendUpdates": "all",
     }
 
     try:
@@ -230,7 +226,6 @@ async def create_booking(body: BookingRequest):
             calendarId=CALENDAR_ID,
             body=event_body,
             conferenceDataVersion=1,
-            sendUpdates="all",
         ).execute()
     except HTTPException:
         raise
@@ -244,6 +239,19 @@ async def create_booking(body: BookingRequest):
                .get("uri", "")
     )
 
+    start_formatted = start_dt.strftime("%d/%m/%Y à %H:%M")
+
+    # Send confirmation email to client (best-effort, do not fail the booking)
+    try:
+        await _send_booking_confirmation(
+            to_email=body.email,
+            name=attendee_name,
+            start_fmt=start_formatted,
+            meet_link=meet_link,
+        )
+    except Exception as mail_exc:
+        logger.warning(f"[booking] Confirmation email failed (non-fatal): {mail_exc}")
+
     return {
         "eventId":  created.get("id"),
         "meetLink": meet_link,
@@ -251,3 +259,56 @@ async def create_booking(body: BookingRequest):
         "start":    created["start"]["dateTime"],
         "end":      created["end"]["dateTime"],
     }
+
+
+async def _send_booking_confirmation(to_email: str, name: str, start_fmt: str, meet_link: str):
+    """Send a booking confirmation email via OVH SMTP."""
+    import aiosmtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    smtp_host     = os.getenv("SMTP_HOST", "ssl0.ovh.net")
+    smtp_port     = int(os.getenv("SMTP_PORT", "465"))
+    smtp_user     = os.getenv("SMTP_USER", "contact@israelgrowthventure.com")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    smtp_from     = os.getenv("SMTP_FROM", "contact@israelgrowthventure.com")
+
+    if not smtp_password:
+        logger.warning("[booking] SMTP_PASSWORD not set, skipping confirmation email.")
+        return
+
+    subject = f"Confirmation de votre rendez-vous IGV – {start_fmt}"
+    plain   = (
+        f"Bonjour {name},\n\n"
+        f"Votre rendez-vous d'audit IGV est confirmé pour le {start_fmt}.\n\n"
+        + (f"Lien Google Meet : {meet_link}\n\n" if meet_link else "")
+        + "À bientôt,\nL'équipe Israel Growth Venture\ncontact@israelgrowthventure.com\n"
+    )
+    html = f"""
+    <html><body style="font-family:Arial,sans-serif;color:#222;">
+    <h2 style="color:#00318D;">Rendez-vous confirmé !</h2>
+    <p>Bonjour <strong>{name}</strong>,</p>
+    <p>Votre session d'audit <strong>Implantation en Israël</strong> est confirmée :</p>
+    <p style="font-size:18px;font-weight:bold;color:#00318D;">{start_fmt}</p>
+    {"<p><a href='" + meet_link + "' style='background:#00318D;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:8px;'>Rejoindre Google Meet</a></p>" if meet_link else ""}
+    <p style="margin-top:24px;color:#555;font-size:13px;">Une question ? Répondez à cet email ou écrivez-nous à <a href="mailto:contact@israelgrowthventure.com">contact@israelgrowthventure.com</a>.</p>
+    <p style="color:#555;font-size:13px;">L'équipe Israel Growth Venture</p>
+    </body></html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"Israel Growth Venture <{smtp_from}>"
+    msg["To"]      = to_email
+    msg["Reply-To"] = smtp_from
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    await aiosmtplib.send(
+        msg,
+        hostname=smtp_host,
+        port=smtp_port,
+        username=smtp_user,
+        password=smtp_password,
+        use_tls=True,
+    )
