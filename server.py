@@ -1144,6 +1144,13 @@ try:
 except Exception as e:
     logging.error(f"✗ Failed to load booking_routes: {e}")
 
+try:
+    from app.routers.google_oauth_routes import router as google_oauth_router
+    app.include_router(google_oauth_router)
+    logging.info("✓ Google OAuth router registered (/api/google)")
+except Exception as e:
+    logging.error(f"✗ Failed to load google_oauth_routes: {e}")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

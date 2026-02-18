@@ -1,163 +1,147 @@
 """
 Booking routes — Google Calendar availability + event creation with Google Meet.
 
-Endpoints:
-  GET  /api/booking/availability   → free 60-min slots (Sun-Thu 09:00-18:00 Asia/Jerusalem)
-  POST /api/booking/book           → create Calendar event + Meet link
+Uses OAuth Authorization Code Flow (user credentials stored as refresh_token).
+This allows creating Google Meet links on plain Gmail — no Workspace required.
 
-Environment:
-  GOOGLE_SERVICE_ACCOUNT_FILE  path to service account JSON (default /etc/secrets/google_service_account.json)
-  BOOKING_CALENDAR_ID          calendar ID (default israel.growth.venture@gmail.com)
+Endpoints:
+  GET  /api/booking/availability  → free slots (Sun–Thu, 12:00–19:00 Asia/Jerusalem)
+  POST /api/booking/book          → create Calendar event + Google Meet link
+  GET  /api/booking/version       → deployed version + google connection status
+
+Environment variables (all optional, have defaults):
+  GOOGLE_CALENDAR_ID          calendar to use (default: "primary")
+  BOOKING_TZ                  timezone string   (default: "Asia/Jerusalem")
+  BOOKING_DAYS_ENABLED        comma-separated weekday numbers, Sun=0 (default: "0,1,2,3,4")
+  BOOKING_START_HOUR          "HH:MM" (default: "12:00")
+  BOOKING_END_HOUR            "HH:MM" (default: "19:00")
+  BOOKING_SLOT_MINUTES        slot duration in minutes (default: "60")
+  BOOKING_MIN_NOTICE_HOURS    min hours ahead (default: "12")
+  BOOKING_LOOKAHEAD_DAYS      days ahead to scan (default: "14")
 """
 
 import os
 import logging
-import json
-from datetime import datetime, timedelta, timezone, date
+import uuid
+from datetime import datetime, timedelta
 from typing import Optional, List
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 
+from app.services.google_calendar_client import (
+    build_calendar_service,
+    get_connection_status,
+    GOOGLE_CALENDAR_ID,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 
-# ── Constants ────────────────────────────────────────────────────────────────
-CALENDAR_ID        = os.environ.get("BOOKING_CALENDAR_ID", "israel.growth.venture@gmail.com")
-# The IGV Gmail calendar must be SHARED (edit access) with the service account email
-# (visible in the service account JSON as "client_email").
-# Share it in Google Calendar settings → "Share with specific people or groups".
-SA_FILE            = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "/etc/secrets/google_service_account.json")
-IGV_EMAIL          = "israel.growth.venture@gmail.com"
-SCOPES             = [
-    "https://www.googleapis.com/auth/calendar",
-]
-WORK_DAYS          = {6, 0, 1, 2, 3}    # Sun=6, Mon=0, Tue=1, Wed=2, Thu=3
-WORK_START_HOUR    = 9
-WORK_END_HOUR      = 18
-SLOT_MINUTES       = 60
+# ── Env-driven config ─────────────────────────────────────────────────────────
+_BOOKING_TZ          = os.environ.get("BOOKING_TZ", "Asia/Jerusalem")
+_DAYS_RAW            = os.environ.get("BOOKING_DAYS_ENABLED", "0,1,2,3,4")
+_WORK_DAYS: set      = {int(d.strip()) for d in _DAYS_RAW.split(",") if d.strip().isdigit()}
+_START_HOUR, _START_MIN = (int(x) for x in os.environ.get("BOOKING_START_HOUR", "12:00").split(":"))
+_END_HOUR,   _END_MIN   = (int(x) for x in os.environ.get("BOOKING_END_HOUR",   "19:00").split(":"))
+_SLOT_MINUTES        = int(os.environ.get("BOOKING_SLOT_MINUTES",      "60"))
+_MIN_NOTICE_HOURS    = int(os.environ.get("BOOKING_MIN_NOTICE_HOURS",  "12"))
+_LOOKAHEAD_DAYS      = int(os.environ.get("BOOKING_LOOKAHEAD_DAYS",    "14"))
 
-# ── Google API client ────────────────────────────────────────────────────────
-
-def _get_calendar_service():
-    """Return an authenticated Google Calendar API service object, or raise."""
-    try:
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
-
-        if not os.path.exists(SA_FILE):
-            logger.error(f"[booking] Service account file not found: {SA_FILE}")
-            raise HTTPException(502, "Booking service not configured (missing credentials).")
-
-        # Verify it looks like a service account (not an OAuth2 client secret)
-        with open(SA_FILE) as f:
-            raw = json.load(f)
-        if raw.get("type") != "service_account":
-            logger.error(f"[booking] Credential file is type={raw.get('type')!r}, expected 'service_account'.")
-            raise HTTPException(502, "Booking service not configured (wrong credential type).")
-
-        creds = service_account.Credentials.from_service_account_info(raw, scopes=SCOPES)
-        service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-        return service
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception(f"[booking] Failed to initialize Google Calendar service: {exc}")
-        raise HTTPException(502, f"Booking service error: {exc}")
+# Convert BOOKING_DAYS (Sun=0 … Sat=6) to Python weekday() (Mon=0 … Sun=6)
+# Sun(0)→6, Mon(1)→0, Tue(2)→1, Wed(3)→2, Thu(4)→3, Fri(5)→4, Sat(6)→5
+_PYTHON_WORK_DAYS = {(d - 1) % 7 for d in _WORK_DAYS}
 
 
-def _all_slots(start_dt: datetime, end_dt: datetime, tz: ZoneInfo) -> List[dict]:
-    """Generate all potential 60-min slots in working hours between start_dt and end_dt."""
+# ── Slot generator ───────────────────────────────────────────────────────────
+
+def _generate_slots(start_search: datetime, end_search: datetime, tz: ZoneInfo) -> List[dict]:
+    """Generate all candidate slots within working days / hours."""
     slots = []
-    current = start_dt.astimezone(tz)
-    while current < end_dt:
-        # weekday(): Mon=0 … Sun=6
-        if current.weekday() in WORK_DAYS:
-            if WORK_START_HOUR <= current.hour < WORK_END_HOUR:
-                slot_end = current + timedelta(minutes=SLOT_MINUTES)
-                if slot_end.hour <= WORK_END_HOUR:
-                    slots.append({
-                        "start": current.isoformat(),
-                        "end": slot_end.isoformat(),
-                    })
-        current += timedelta(minutes=SLOT_MINUTES)
+    current = start_search.astimezone(tz)
+    # Round up to next slot boundary
+    if current.minute != 0 or current.second != 0 or current.microsecond != 0:
+        current = current.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+    while current < end_search:
+        if current.weekday() in _PYTHON_WORK_DAYS:
+            slot_start_mins = current.hour * 60 + current.minute
+            work_start_mins = _START_HOUR * 60 + _START_MIN
+            work_end_mins   = _END_HOUR   * 60 + _END_MIN
+            if work_start_mins <= slot_start_mins and slot_start_mins + _SLOT_MINUTES <= work_end_mins:
+                slot_end = current + timedelta(minutes=_SLOT_MINUTES)
+                slots.append({"start": current.isoformat(), "end": slot_end.isoformat()})
+        current += timedelta(minutes=_SLOT_MINUTES)
     return slots
+
+
+# ── GET /version ─────────────────────────────────────────────────────────────
+
+@router.get("/version")
+async def booking_version():
+    """Canary endpoint — returns deployed version + Google connection status."""
+    connected = await get_connection_status()
+    return {"version": "v6-oauth", "commit": "pending", "googleConnected": connected}
 
 
 # ── GET /availability ────────────────────────────────────────────────────────
 
 @router.get("/availability")
 async def get_availability(
-    days:     int    = Query(default=14, ge=1, le=60, description="Number of days ahead to scan"),
-    duration: int    = Query(default=60, description="Slot duration in minutes (ignored, always 60)"),
-    tz:       str    = Query(default="Asia/Jerusalem", description="Client timezone for display"),
+    days:     int = Query(default=None, ge=1, le=60),
+    duration: int = Query(default=None),
 ):
-    """
-    Return free 60-min slots in working hours (Sun–Thu, 09:00–18:00 Asia/Jerusalem)
-    for the next `days` days, filtered against Google Calendar busy times.
-    """
-    try:
-        user_tz = ZoneInfo(tz)
-    except Exception:
-        user_tz = ZoneInfo("Asia/Jerusalem")
+    """Return free slots filtered against Google Calendar busy times."""
+    if not await get_connection_status():
+        raise HTTPException(
+            503,
+            "Google Calendar not connected. Admin must visit /api/google/connect.",
+        )
 
-    israel_tz   = ZoneInfo("Asia/Jerusalem")
-    now_il      = datetime.now(israel_tz)
-    # Round up to next full hour so we never return a past slot
-    start_search = now_il.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-    end_search   = start_search + timedelta(days=days)
+    effective_days = days or _LOOKAHEAD_DAYS
+    tz        = ZoneInfo(_BOOKING_TZ)
+    now       = datetime.now(tz)
+    start_search = now + timedelta(hours=_MIN_NOTICE_HOURS)
+    end_search   = now + timedelta(days=effective_days)
 
-    # Build all candidate slots
-    candidates = _all_slots(start_search, end_search, israel_tz)
+    candidates = _generate_slots(start_search, end_search, tz)
     if not candidates:
         return {"slots": []}
 
-    # Fetch busy times from Google Calendar
+    utc = ZoneInfo("UTC")
     try:
-        service = _get_calendar_service()
-        freebusy_body = {
-            "timeMin":  start_search.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "timeMax":  end_search.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        service = await build_calendar_service()
+        fb = service.freebusy().query(body={
+            "timeMin":  start_search.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timeMax":  end_search.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "timeZone": "UTC",
-            "items":    [{"id": CALENDAR_ID}],
-        }
-        fb_result = service.freebusy().query(body=freebusy_body).execute()
-        busy_list = fb_result.get("calendars", {}).get(CALENDAR_ID, {}).get("busy", [])
-    except HTTPException as he:
-        # Calendar not configured → return empty list so UI degrades gracefully
-        logger.warning(f"[booking] Calendar not available ({he.detail}), returning empty slots.")
-        return {"slots": [], "warning": he.detail}
+            "items":    [{"id": GOOGLE_CALENDAR_ID}],
+        }).execute()
+        busy_list = fb.get("calendars", {}).get(GOOGLE_CALENDAR_ID, {}).get("busy", [])
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
     except Exception as exc:
-        logger.exception(f"[booking] freebusy API call failed: {exc}")
-        # Return empty list + warning instead of crashing the page
+        logger.exception(f"[booking] freebusy failed: {exc}")
         return {"slots": [], "warning": str(exc)}
 
-    # Parse busy intervals
-    busy_intervals = []
-    for b in busy_list:
-        b_start = datetime.fromisoformat(b["start"].replace("Z", "+00:00"))
-        b_end   = datetime.fromisoformat(b["end"].replace("Z", "+00:00"))
-        busy_intervals.append((b_start, b_end))
+    busy_intervals = [
+        (
+            datetime.fromisoformat(b["start"].replace("Z", "+00:00")),
+            datetime.fromisoformat(b["end"].replace("Z", "+00:00")),
+        )
+        for b in busy_list
+    ]
 
-    # Filter out busy slots
-    free_slots = []
-    for slot in candidates:
-        s_start = datetime.fromisoformat(slot["start"])
-        s_end   = datetime.fromisoformat(slot["end"])
-        busy = any(
-            s_start < b_end and s_end > b_start
+    free = [
+        s for s in candidates
+        if not any(
+            datetime.fromisoformat(s["start"]) < b_end and datetime.fromisoformat(s["end"]) > b_start
             for b_start, b_end in busy_intervals
         )
-        if not busy:
-            # Return in user timezone for display
-            free_slots.append({
-                "start": s_start.astimezone(user_tz).isoformat(),
-                "end":   s_end.astimezone(user_tz).isoformat(),
-            })
-
-    return {"slots": free_slots}
+    ]
+    return {"slots": free}
 
 
 # ── POST /book ───────────────────────────────────────────────────────────────
@@ -171,83 +155,85 @@ class BookingRequest(BaseModel):
     topic: Optional[str] = "audit"
 
 
-@router.get("/version")
-def booking_version():
-    """Canary endpoint to verify deployed version."""
-    return {"version": "v4-no-attendees", "commit": "ab26d52"}
-
-
 @router.post("/book")
 async def create_booking(body: BookingRequest):
     """
-    Create a Google Calendar event with Google Meet conference.
-    Invites both the client and IGV.
+    Create a Google Calendar event with a Google Meet link (OAuth user credentials).
     Returns { eventId, meetLink, htmlLink, start, end }.
     """
-    # Validate ISO datetimes
+    if not await get_connection_status():
+        raise HTTPException(
+            503,
+            "Google Calendar not connected. L'admin doit connecter Google Agenda.",
+        )
+
     try:
         start_dt = datetime.fromisoformat(body.start)
         end_dt   = datetime.fromisoformat(body.end)
     except ValueError:
         raise HTTPException(422, "start/end must be ISO 8601 datetime strings.")
 
+    utc = ZoneInfo("UTC")
+
+    # Re-verify the slot is still free
+    try:
+        service = await build_calendar_service()
+        fb = service.freebusy().query(body={
+            "timeMin":  start_dt.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timeMax":  end_dt.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timeZone": "UTC",
+            "items":    [{"id": GOOGLE_CALENDAR_ID}],
+        }).execute()
+        busy = fb.get("calendars", {}).get(GOOGLE_CALENDAR_ID, {}).get("busy", [])
+        if busy:
+            raise HTTPException(409, "Ce créneau vient d'être réservé. Veuillez en choisir un autre.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(f"[booking] pre-book freebusy check failed (non-fatal): {exc}")
+
     attendee_name = body.name or body.email.split("@")[0]
 
     event_body = {
-        "summary":     f"IGV Audit – {attendee_name}",
+        "summary": "Audit IGV – Implantation en Israël",
         "description": (
-            f"Audit d'implantation en Israël\n"
             f"Client : {attendee_name}\n"
             f"Email  : {body.email}\n"
             + (f"Tél.   : {body.phone}\n" if body.phone else "")
             + f"Sujet  : {body.topic or 'audit'}\n"
+            + "Paiement confirmé."
         ),
-        "start": {
-            "dateTime": start_dt.isoformat(),
-            "timeZone": "Asia/Jerusalem",
-        },
-        "end": {
-            "dateTime": end_dt.isoformat(),
-            "timeZone": "Asia/Jerusalem",
-        },
-        # NOTE: Service accounts on plain Gmail cannot use `attendees`.
-        # We notify the client via email separately (see aiosmtplib below).
+        "start": {"dateTime": start_dt.isoformat(), "timeZone": _BOOKING_TZ},
+        "end":   {"dateTime": end_dt.isoformat(),   "timeZone": _BOOKING_TZ},
+        "attendees": [{"email": body.email, "displayName": attendee_name}],
         "conferenceData": {
             "createRequest": {
-                "requestId":             f"igv-{int(start_dt.timestamp())}",
+                "requestId": str(uuid.uuid4()),
                 "conferenceSolutionKey": {"type": "hangoutsMeet"},
             }
         },
-        "reminders": {
-            "useDefault": False,
-            "overrides":  [
-                {"method": "popup",  "minutes": 15},
-            ],
-        },
+        "reminders": {"useDefault": True},
     }
 
     try:
-        service = _get_calendar_service()
         created = service.events().insert(
-            calendarId=CALENDAR_ID,
+            calendarId=GOOGLE_CALENDAR_ID,
             body=event_body,
             conferenceDataVersion=1,
+            sendUpdates="all",
         ).execute()
-    except HTTPException:
-        raise
     except Exception as exc:
-        logger.exception(f"[booking] Failed to create event: {exc}")
-        raise HTTPException(502, f"Could not create calendar event: {exc}")
+        logger.exception(f"[booking] events.insert failed: {exc}")
+        raise HTTPException(502, f"Impossible de créer l'événement : {exc}")
 
     meet_link = (
         created.get("conferenceData", {})
                .get("entryPoints", [{}])[0]
                .get("uri", "")
-    )
+    ) or created.get("htmlLink", "")
 
     start_formatted = start_dt.strftime("%d/%m/%Y à %H:%M")
 
-    # Send confirmation email to client (best-effort, do not fail the booking)
     try:
         await _send_booking_confirmation(
             to_email=body.email,
@@ -266,6 +252,8 @@ async def create_booking(body: BookingRequest):
         "end":      created["end"]["dateTime"],
     }
 
+
+# ── Confirmation email ───────────────────────────────────────────────────────
 
 async def _send_booking_confirmation(to_email: str, name: str, start_fmt: str, meet_link: str):
     """Send a booking confirmation email via OVH SMTP."""
@@ -290,22 +278,29 @@ async def _send_booking_confirmation(to_email: str, name: str, start_fmt: str, m
         + (f"Lien Google Meet : {meet_link}\n\n" if meet_link else "")
         + "À bientôt,\nL'équipe Israel Growth Venture\ncontact@israelgrowthventure.com\n"
     )
+    meet_btn = (
+        f"<p><a href='{meet_link}' style='background:#00318D;color:white;"
+        f"padding:10px 20px;border-radius:8px;text-decoration:none;"
+        f"display:inline-block;margin-top:8px;'>Rejoindre Google Meet</a></p>"
+        if meet_link else ""
+    )
     html = f"""
     <html><body style="font-family:Arial,sans-serif;color:#222;">
     <h2 style="color:#00318D;">Rendez-vous confirmé !</h2>
     <p>Bonjour <strong>{name}</strong>,</p>
     <p>Votre session d'audit <strong>Implantation en Israël</strong> est confirmée :</p>
     <p style="font-size:18px;font-weight:bold;color:#00318D;">{start_fmt}</p>
-    {"<p><a href='" + meet_link + "' style='background:#00318D;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:8px;'>Rejoindre Google Meet</a></p>" if meet_link else ""}
-    <p style="margin-top:24px;color:#555;font-size:13px;">Une question ? Répondez à cet email ou écrivez-nous à <a href="mailto:contact@israelgrowthventure.com">contact@israelgrowthventure.com</a>.</p>
+    {meet_btn}
+    <p style="margin-top:24px;color:#555;font-size:13px;">Une question ? Répondez à cet email ou écrivez-nous à
+    <a href="mailto:contact@israelgrowthventure.com">contact@israelgrowthventure.com</a>.</p>
     <p style="color:#555;font-size:13px;">L'équipe Israel Growth Venture</p>
     </body></html>
     """
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = f"Israel Growth Venture <{smtp_from}>"
-    msg["To"]      = to_email
+    msg["Subject"]  = subject
+    msg["From"]     = f"Israel Growth Venture <{smtp_from}>"
+    msg["To"]       = to_email
     msg["Reply-To"] = smtp_from
     msg.attach(MIMEText(plain, "plain"))
     msg.attach(MIMEText(html, "html"))
