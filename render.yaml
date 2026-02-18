@@ -21,8 +21,8 @@ services:
         sync: false
       - key: CMS_PASSWORD
         sync: false
-      - key: CORS_ALLOWED_ORIGINS
-        value: https://israelgrowthventure.com,https://www.israelgrowthventure.com
+      - key: CORS_ORIGINS
+        value: https://israelgrowthventure.com,https://www.israelgrowthventure.com,https://audit.israelgrowthventure.com,https://www.audit.israelgrowthventure.com
       - key: GEMINI_API_KEY
         sync: false
       - key: SMTP_HOST

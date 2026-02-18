@@ -205,16 +205,27 @@ async def root():
 # CORS origins from environment variable (comma-separated)
 cors_origins_from_env = os.getenv('CORS_ORIGINS', '')
 
+# Canonical allowed origins (always included regardless of env var)
+CANONICAL_ORIGINS = [
+    "https://israelgrowthventure.com",
+    "https://www.israelgrowthventure.com",
+    "https://audit.israelgrowthventure.com",
+    "https://www.audit.israelgrowthventure.com",
+]
+
 if cors_origins_from_env:
-    allowed_origins = [origin.strip() for origin in cors_origins_from_env.split(',') if origin.strip()]
-    logging.info(f"✓ CORS origins loaded from env: {allowed_origins}")
+    env_origins = [origin.strip() for origin in cors_origins_from_env.split(',') if origin.strip()]
+    # Merge env origins with canonical list (no duplicates)
+    allowed_origins = list(dict.fromkeys(CANONICAL_ORIGINS + env_origins))
+    logging.info(f"✓ CORS origins loaded from env (merged): {allowed_origins}")
 else:
     if os.getenv('ENVIRONMENT', 'development') == 'development':
         allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
         logging.warning("⚠️ CORS using dev defaults")
     else:
-        logging.error("❌ CRITICAL: CORS_ORIGINS must be set in production")
-        raise ValueError("Missing CORS_ORIGINS in production")
+        # Production fallback: use canonical list — prevents server crash if env var missing
+        allowed_origins = CANONICAL_ORIGINS
+        logging.warning("⚠️ CORS_ORIGINS not set — using canonical fallback origins")
 
 # Global variable for exception handlers
 ALLOWED_ORIGINS = allowed_origins
