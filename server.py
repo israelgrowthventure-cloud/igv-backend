@@ -749,7 +749,7 @@ async def detect_location(request: Request):
 
 @api_router.get("/cms/content")
 async def get_cms_content(page: str, language: str = 'fr', user: Dict = Depends(get_current_user)):
-    """Get CMS content for a specific page and language (protected)"""
+    """[DEPRECATED] Use GET /api/pages/{page}?language= instead. Get CMS content for a specific page and language (protected)"""
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
@@ -759,13 +759,13 @@ async def get_cms_content(page: str, language: str = 'fr', user: Dict = Depends(
     )
     
     if not content:
-        return {"page": page, "language": language, "content": {}}
+        return {"page": page, "language": language, "content": {}, "_deprecated": True}
     
-    return content
+    return {**content, "_deprecated": True}
 
 @api_router.post("/cms/content")
 async def save_cms_content(data: CMSContentCreate, user: Dict = Depends(get_current_user)):
-    """Save CMS content (protected, admin/editor only)"""
+    """[DEPRECATED] Use POST /api/pages/update-flat instead. Save CMS content (protected, admin/editor only)"""
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
