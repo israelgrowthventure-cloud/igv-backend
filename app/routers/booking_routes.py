@@ -165,19 +165,14 @@ async def create_booking(body: BookingRequest):
     Create a Google Calendar event with a Google Meet link (OAuth user credentials).
     Returns { eventId, meetLink, htmlLink, start, end }.
     """
-    if not await get_connection_status():
-        raise HTTPException(
-            503,
-            "Google Calendar not connected. L'admin doit connecter Google Agenda.",
-        )
-
+    # Step 1: Parse datetime (fast, no I/O)
     try:
         start_dt = datetime.fromisoformat(body.start)
         end_dt   = datetime.fromisoformat(body.end)
     except ValueError:
         raise HTTPException(422, "start/end must be ISO 8601 datetime strings.")
 
-    # ── 48h business rule guard (anti-bypass, server-side) ────────────────
+    # Step 2: 48h business rule guard — BEFORE Google Calendar check (anti-bypass)
     tz_j     = ZoneInfo(_BOOKING_TZ)
     now_tz   = datetime.now(tz_j)
     if start_dt.tzinfo is None:
@@ -197,7 +192,14 @@ async def create_booking(body: BookingRequest):
             400,
             "Ce cr\u00e9neau n'est pas r\u00e9servable : d\u00e9lai minimum 48h."
         )
-    # ──────────────────────────────────────────────────────────────────────
+
+    # Step 3: Google Calendar connectivity
+    if not await get_connection_status():
+        raise HTTPException(
+            503,
+            "Google Calendar not connected. L'admin doit connecter Google Agenda.",
+        )
+
 
     utc = ZoneInfo("UTC")
 
