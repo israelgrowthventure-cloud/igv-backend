@@ -50,6 +50,9 @@ _SLOT_MINUTES        = int(os.environ.get("BOOKING_SLOT_MINUTES",      "60"))
 _MIN_NOTICE_HOURS    = int(os.environ.get("BOOKING_MIN_NOTICE_HOURS",  "12"))
 _LOOKAHEAD_DAYS      = int(os.environ.get("BOOKING_LOOKAHEAD_DAYS",    "14"))
 
+# Business rule: audits require at least 48h notice (hard-coded, not overridable by env var)
+_HARD_MIN_NOTICE_HOURS = 48
+
 # Convert BOOKING_DAYS (Sun=0 … Sat=6) to Python weekday() (Mon=0 … Sun=6)
 # Sun(0)→6, Mon(1)→0, Tue(2)→1, Wed(3)→2, Thu(4)→3, Fri(5)→4, Sat(6)→5
 _PYTHON_WORK_DAYS = {(d - 1) % 7 for d in _WORK_DAYS}
@@ -103,7 +106,8 @@ async def get_availability(
     effective_days = days or _LOOKAHEAD_DAYS
     tz        = ZoneInfo(_BOOKING_TZ)
     now       = datetime.now(tz)
-    start_search = now + timedelta(hours=_MIN_NOTICE_HOURS)
+    # Enforce 48h minimum: take the stricter of the two values
+    start_search = now + timedelta(hours=max(_MIN_NOTICE_HOURS, _HARD_MIN_NOTICE_HOURS))
     end_search   = now + timedelta(days=effective_days)
 
     candidates = _generate_slots(start_search, end_search, tz)
@@ -172,6 +176,28 @@ async def create_booking(body: BookingRequest):
         end_dt   = datetime.fromisoformat(body.end)
     except ValueError:
         raise HTTPException(422, "start/end must be ISO 8601 datetime strings.")
+
+    # ── 48h business rule guard (anti-bypass, server-side) ────────────────
+    tz_j     = ZoneInfo(_BOOKING_TZ)
+    now_tz   = datetime.now(tz_j)
+    if start_dt.tzinfo is None:
+        # Naive datetime: assume BOOKING_TZ (document assumption in log)
+        start_dt = start_dt.replace(tzinfo=tz_j)
+        logger.warning(
+            f"[booking] start_time '{body.start}' had no timezone info; "
+            f"assumed {_BOOKING_TZ}"
+        )
+    threshold_48h = now_tz + timedelta(hours=_HARD_MIN_NOTICE_HOURS)
+    if start_dt.astimezone(tz_j) < threshold_48h:
+        logger.warning(
+            f"[booking] REFUSED: slot {start_dt.isoformat()} < 48h threshold "
+            f"({threshold_48h.isoformat()}) requested by {body.email}"
+        )
+        raise HTTPException(
+            400,
+            "Ce cr\u00e9neau n'est pas r\u00e9servable : d\u00e9lai minimum 48h."
+        )
+    # ──────────────────────────────────────────────────────────────────────
 
     utc = ZoneInfo("UTC")
 
