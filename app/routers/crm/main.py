@@ -755,6 +755,64 @@ async def create_opportunity(opp_data: OpportunityCreate, user: Dict = Depends(g
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/opportunities/{opp_id}")
+async def get_opportunity(opp_id: str, user: Dict = Depends(get_current_user)):
+    """Get single opportunity by ID"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        opp = await current_db.opportunities.find_one({"_id": ObjectId(opp_id)})
+        if not opp:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        opp["_id"] = str(opp["_id"])
+        opp["id"] = opp["_id"]
+        return opp
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/opportunities/{opp_id}")
+async def update_opportunity(opp_id: str, opp_data: OpportunityUpdate, user: Dict = Depends(get_current_user)):
+    """Update opportunity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        update_fields = {k: v for k, v in opp_data.dict().items() if v is not None}
+        update_fields["updated_at"] = datetime.now(timezone.utc)
+        result = await current_db.opportunities.update_one(
+            {"_id": ObjectId(opp_id)},
+            {"$set": update_fields}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        return {"message": "Opportunity updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/opportunities/{opp_id}")
+async def delete_opportunity(opp_id: str, user: Dict = Depends(get_current_user)):
+    """Delete opportunity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.opportunities.delete_one({"_id": ObjectId(opp_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        return {"message": "Opportunity deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==========================================
 # CONTACTS (from crm_complete_routes)
 # ==========================================
@@ -816,6 +874,64 @@ async def create_contact(contact_data: ContactCreate, user: Dict = Depends(get_c
         
     except Exception as e:
         logging.error(f"Error creating contact: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/contacts/{contact_id}")
+async def get_contact(contact_id: str, user: Dict = Depends(get_current_user)):
+    """Get single contact by ID"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        contact = await current_db.contacts.find_one({"_id": ObjectId(contact_id)})
+        if not contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        contact["_id"] = str(contact["_id"])
+        contact["id"] = contact["_id"]
+        return contact
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/contacts/{contact_id}")
+async def update_contact(contact_id: str, contact_data: ContactUpdate, user: Dict = Depends(get_current_user)):
+    """Update contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        update_fields = {k: v for k, v in contact_data.dict().items() if v is not None}
+        update_fields["updated_at"] = datetime.now(timezone.utc)
+        result = await current_db.contacts.update_one(
+            {"_id": ObjectId(contact_id)},
+            {"$set": update_fields}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return {"message": "Contact updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/contacts/{contact_id}")
+async def delete_contact(contact_id: str, user: Dict = Depends(get_current_user)):
+    """Delete contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.contacts.delete_one({"_id": ObjectId(contact_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return {"message": "Contact deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1033,6 +1149,165 @@ async def get_available_tags(user: Dict = Depends(get_current_user)):
         
     except Exception as e:
         logging.error(f"[CRM Settings] Error getting tags: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings/tags")
+async def create_tag(data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
+    """Create a new CRM tag"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        tag_name = data.get("name", "").strip()
+        if not tag_name:
+            raise HTTPException(status_code=400, detail="Tag name required")
+        existing = await current_db.crm_tags.find_one({"name": tag_name})
+        if existing:
+            raise HTTPException(status_code=409, detail="Tag already exists")
+        result = await current_db.crm_tags.insert_one({
+            "name": tag_name,
+            "created_at": datetime.now(timezone.utc),
+            "created_by": user["email"]
+        })
+        return {"success": True, "tag_id": str(result.inserted_id), "name": tag_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/settings/tags/{tag_id}")
+async def delete_tag(tag_id: str, user: Dict = Depends(get_current_user)):
+    """Delete a CRM tag"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.crm_tags.delete_one({"_id": ObjectId(tag_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        return {"success": True, "message": "Tag deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/settings/pipeline-stages")
+async def get_pipeline_stages(user: Dict = Depends(get_current_user)):
+    """Get available pipeline stages"""
+    return {
+        "success": True,
+        "data": ["qualification", "proposal", "negotiation", "closed_won", "closed_lost"]
+    }
+
+
+@router.get("/settings/quality")
+async def get_quality_settings(user: Dict = Depends(get_current_user)):
+    """Get CRM quality thresholds"""
+    current_db = get_db()
+    if current_db is None:
+        return {"success": True, "data": {"response_time_hours": 24, "follow_up_days": 7, "min_interactions": 3}}
+    try:
+        setting = await current_db.settings.find_one({"key": "crm_quality"})
+        if setting:
+            import json
+            data = json.loads(setting["value"]) if isinstance(setting["value"], str) else setting["value"]
+            return {"success": True, "data": data}
+        return {"success": True, "data": {"response_time_hours": 24, "follow_up_days": 7, "min_interactions": 3}}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/settings/performance")
+async def get_performance_settings(user: Dict = Depends(get_current_user)):
+    """Get CRM performance targets"""
+    current_db = get_db()
+    if current_db is None:
+        return {"success": True, "data": {"monthly_deals_target": 10, "conversion_rate_target": 20, "revenue_target": 50000}}
+    try:
+        setting = await current_db.settings.find_one({"key": "crm_performance"})
+        if setting:
+            import json
+            data = json.loads(setting["value"]) if isinstance(setting["value"], str) else setting["value"]
+            return {"success": True, "data": data}
+        return {"success": True, "data": {"monthly_deals_target": 10, "conversion_rate_target": 20, "revenue_target": 50000}}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/pack-rappel-requests")
+async def get_pack_rappel_requests(
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
+    status: Optional[str] = None,
+    user: Dict = Depends(get_current_user)
+):
+    """Get pack rappel requests (leads with source=pack_rappel)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        query = {"source": "pack_rappel"}
+        if status:
+            query["status"] = status
+        total = await current_db.leads.count_documents(query)
+        skip = (page - 1) * limit
+        leads = await current_db.leads.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        return {"success": True, "data": leads, "total": total, "page": page, "limit": limit}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/pack-rappel-requests/{lead_id}/assign")
+async def assign_pack_rappel_request(
+    lead_id: str,
+    data: Dict[str, Any] = Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """Assign pack rappel request to a consultant"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.leads.update_one(
+            {"_id": ObjectId(lead_id)},
+            {"$set": {"assigned_to": data.get("assigned_to"), "updated_at": datetime.now(timezone.utc)}}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Request not found")
+        return {"success": True, "message": "Request assigned"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/pack-rappel-requests/{lead_id}/status")
+async def update_pack_rappel_status(
+    lead_id: str,
+    data: Dict[str, Any] = Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """Update pack rappel request status"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.leads.update_one(
+            {"_id": ObjectId(lead_id)},
+            {"$set": {"status": data.get("status"), "updated_at": datetime.now(timezone.utc)}}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Request not found")
+        return {"success": True, "message": "Status updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1752,6 +2027,35 @@ async def get_pipeline_view(user: Dict = Depends(get_current_user)):
         return {"success": True, "data": result}
     except Exception as e:
         logging.error(f"Pipeline view error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/pipeline/opportunities/{opp_id}")
+async def update_opportunity_pipeline_stage(
+    opp_id: str,
+    data: Dict[str, Any] = Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """Update opportunity stage from pipeline kanban view"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        update_fields = {"updated_at": datetime.now(timezone.utc)}
+        if "stage" in data:
+            update_fields["stage"] = data["stage"]
+        if "estimated_value" in data:
+            update_fields["estimated_value"] = data["estimated_value"]
+        result = await current_db.opportunities.update_one(
+            {"_id": ObjectId(opp_id)},
+            {"$set": update_fields}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        return {"success": True, "message": "Stage updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

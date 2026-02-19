@@ -4,12 +4,17 @@ MISSION E: Admin endpoints for stats and lead viewing
 MISSION F: Quota Gemini - Process pending analyses with retry mechanism
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body as _Body
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 import os
 import logging
+
+try:
+    from auth_middleware import get_current_user
+except ImportError:
+    get_current_user = None
 
 router = APIRouter(prefix="/api/admin")
 
@@ -594,4 +599,88 @@ async def update_settings(settings: SettingsUpdate):
         return {"status": "updated", "updated_fields": list(update_data.keys())}
     except Exception as e:
         logging.error(f"Error updating settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# MM-12: ADMIN PROFILE + CHANGE-PASSWORD
+# ==========================================
+
+@router.get("/profile")
+async def get_admin_profile(user: Dict = Depends(get_current_user)):
+    """GET /api/admin/profile - Get current user profile"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        profile = await current_db.crm_users.find_one({"email": user["email"]})
+        if not profile:
+            # Return info from JWT token if no DB record
+            return {"success": True, "data": {"email": user["email"], "role": user.get("role"), "name": user.get("name", "")}}
+        profile["_id"] = str(profile["_id"])
+        profile.pop("password_hash", None)
+        profile.pop("password", None)
+        return {"success": True, "data": profile}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/profile")
+async def update_admin_profile(
+    data: Dict[str, Any] = _Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """PUT /api/admin/profile - Update current user profile"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        allowed = ["name", "phone", "language", "avatar"]
+        update_fields = {k: v for k, v in data.items() if k in allowed}
+        update_fields["updated_at"] = datetime.now(timezone.utc)
+        await current_db.crm_users.update_one(
+            {"email": user["email"]},
+            {"$set": update_fields},
+            upsert=False
+        )
+        return {"success": True, "message": "Profile updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/change-password")
+async def change_admin_password(
+    data: Dict[str, Any] = _Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """POST /api/admin/change-password - Change current user password"""
+    import hashlib
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        current_password = data.get("current_password") or data.get("currentPassword")
+        new_password = data.get("new_password") or data.get("newPassword")
+        if not current_password or not new_password:
+            raise HTTPException(status_code=400, detail="current_password and new_password required")
+        
+        db_user = await current_db.crm_users.find_one({"email": user["email"]})
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify current password
+        stored_hash = db_user.get("password_hash", "")
+        current_hash = hashlib.sha256(current_password.encode()).hexdigest()
+        if stored_hash != current_hash:
+            raise HTTPException(status_code=400, detail="Current password incorrect")
+        
+        new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        await current_db.crm_users.update_one(
+            {"email": user["email"]},
+            {"$set": {"password_hash": new_hash, "updated_at": datetime.now(timezone.utc)}}
+        )
+        return {"success": True, "message": "Password updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -719,3 +719,105 @@ async def export_all_data(user: Dict = Depends(require_admin)):
     except Exception as e:
         logger.error(f"Error exporting all data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# MM-08: EMAIL TEMPLATES CRUD
+# ==========================================
+
+@router.get("/emails/templates")
+async def get_email_templates(
+    category: Optional[str] = None,
+    user: Dict = Depends(get_current_user)
+):
+    """Get all email templates"""
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        query = {}
+        if category:
+            query["category"] = category
+        templates = await db.email_templates.find(query).sort("created_at", -1).to_list(200)
+        for t in templates:
+            t["_id"] = str(t["_id"])
+            t["id"] = t["_id"]
+        return {"success": True, "data": templates, "total": len(templates)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/emails/templates")
+async def create_email_template(
+    data: Dict = Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """Create a new email template"""
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        template = {
+            "name": data.get("name", ""),
+            "subject": data.get("subject", ""),
+            "body": data.get("body", ""),
+            "category": data.get("category", "general"),
+            "language": data.get("language", "fr"),
+            "variables": data.get("variables", []),
+            "created_at": datetime.now(timezone.utc),
+            "created_by": user["email"],
+            "updated_at": datetime.now(timezone.utc)
+        }
+        result = await db.email_templates.insert_one(template)
+        return {"success": True, "template_id": str(result.inserted_id), "message": "Template created"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/emails/templates/{template_id}")
+async def update_email_template(
+    template_id: str,
+    data: Dict = Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """Update an email template"""
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        allowed = ["name", "subject", "body", "category", "language", "variables"]
+        update_fields = {k: v for k, v in data.items() if k in allowed}
+        update_fields["updated_at"] = datetime.now(timezone.utc)
+        update_fields["updated_by"] = user["email"]
+        result = await db.email_templates.update_one(
+            {"_id": ObjectId(template_id)},
+            {"$set": update_fields}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Template not found")
+        return {"success": True, "message": "Template updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/emails/templates/{template_id}")
+async def delete_email_template(
+    template_id: str,
+    user: Dict = Depends(get_current_user)
+):
+    """Delete an email template"""
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await db.email_templates.delete_one({"_id": ObjectId(template_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Template not found")
+        return {"success": True, "message": "Template deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
