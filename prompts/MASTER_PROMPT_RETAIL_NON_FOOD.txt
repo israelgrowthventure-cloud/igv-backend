@@ -140,3 +140,8 @@ TYPES_EMPLACEMENTS_TEXT = (injecté)
 
 INSTRUCTION FINALE
 Génère maintenant la mini-analyse au format imposé, en respectant strictement toutes les règles ci-dessus.
+
+
+---
+
+Réservez votre Audit Stratégique (60 min) avec Mickael Benmoussa pour valider ce diagnostic : https://israelgrowthventure.com/audit

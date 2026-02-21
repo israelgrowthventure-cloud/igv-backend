@@ -510,6 +510,9 @@ Vous trouverez ci-joint votre analyse de marché personnalisée pour {brand_name
 
 Cette analyse est un premier aperçu des opportunités d'expansion de votre marque en Israël. Pour un accompagnement complet et une étude approfondie, nos experts sont à votre disposition.
 
+🎯 Réservez votre Audit Stratégique (60 min) :
+https://israelgrowthventure.com/audit
+
 📞 Réservez un appel gratuit de 30 minutes :
 https://israelgrowthventure.com/appointment
 
@@ -531,6 +534,9 @@ Please find attached your personalized market analysis for {brand_name}.
 
 This analysis is a first overview of your brand's expansion opportunities in Israel. For complete support and an in-depth study, our experts are at your disposal.
 
+🎯 Book your Strategic Audit (60 min):
+https://israelgrowthventure.com/audit
+
 📞 Book a free 30-minute call:
 https://israelgrowthventure.com/appointment
 
@@ -551,6 +557,9 @@ Israel Growth Venture Team
 בצרוף תמצא את הניתוח האישי שלך עבור {brand_name}.
 
 ניתוח זה הוא סקירה ראשונית של הזדמנויות ההתרחבות של המותג שלך בישראל. לליווי מלא ומחקר מעמיק, המומחים שלנו לרשותך.
+
+🎯 הזמינו את הביקורת האסטרטגית שלכם (60 דקות):
+https://israelgrowthventure.com/audit
 
 📞 קבע שיחה חינמית של 30 דקות:
 https://israelgrowthventure.com/appointment
