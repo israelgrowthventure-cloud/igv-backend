@@ -35,3 +35,18 @@
 
 ### Action: Implémentation endpoints manquants dans crm_complete_routes.py
 
+
+---
+
+## 2026-02-21 - MISSION: BLOCK_AUDIT_BOOKING_UNDER_48H
+
+### Commits
+- ed9315b : feat(booking): enforce 48h minimum notice rule (round 1)
+- 7d88e04 : fix(booking): move 48h guard BEFORE Google Calendar check
+
+### Preuves production
+- GET /api/booking/availability?days=14 -> first slot 2026-02-24T12h (~63h) - PASS
+- POST /api/booking/book +1h -> HTTP 400 delai minimum 48h - PASS
+- POST /api/booking/book +49h -> HTTP 200 - PASS
+
+### Statut: COMPLETE

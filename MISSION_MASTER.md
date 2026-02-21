@@ -103,3 +103,91 @@ Configurer dans le dashboard Render du service igv-cms-backend :
   [ ] Test paiement end-to-end           <- Apres config Monetico
 
 Derniere mise a jour: 18/02/2026
+
+
+---
+
+# ============================================================
+# MISSION: BLOCK_AUDIT_BOOKING_UNDER_48H
+# ============================================================
+# Date: 21 Fevrier 2026
+# Statut: COMPLETE - 3 preuves validees en production
+# ============================================================
+
+## OBJECTIF
+
+Enforcer une regle metier stricte : aucun audit ne peut etre reserve
+avec un delai inferieur a 48h. Bloquage cote frontend ET backend.
+
+---
+
+## IMPLEMENTATION
+
+### Backend - app/routers/booking_routes.py
+
+1. Constante non-overridable : _HARD_MIN_NOTICE_HOURS = 48
+2. GET /availability : start_search = now + timedelta(hours=max(12, 48))
+3. POST /book - Execution order (final):
+   - Step 1: Parse start/end ISO -> HTTP 422 si invalide
+   - Step 2: 48h guard (AVANT Google Cal) -> HTTP 400 si start < NOW+48h
+   - Step 3: Google Cal connectivity -> HTTP 503 si non connecte
+   - Step 4: Freebusy re-verify -> HTTP 409 si creneau pris
+   - Step 5: Create event + send email
+4. Timezone: Asia/Jerusalem. Naive datetimes assumed Jerusalem + warning log.
+
+### Frontend - src/pages/Appointment.js
+
+- BOOKING_MIN_HOURS = 48, isWithin48h(isoStart) helper
+- useState selectedSlot: URL-param bypass bloque
+- slotsByDay: filtre .filter(slot => !isWithin48h(slot.start))
+- handleConfirm: guard avant fetch -> setFormError si isWithin48h
+- HTTP 400 handler dans catch chain
+- Banniere bleue au-dessus de la liste des creneaux
+
+### i18n - fr/en/he
+
+  booking.minNotice48h + booking.error48h ajoutes dans les 3 langues
+
+---
+
+## COMMITS
+
+| SHA      | Repo         | Message                                                     | Statut |
+|----------|--------------|-------------------------------------------------------------|--------|
+| ed9315b  | igv-backend  | feat(booking): enforce 48h minimum notice rule (round 1)   | OK     |
+| 7d88e04  | igv-backend  | fix(booking): move 48h guard BEFORE Google Calendar check  | OK     |
+| 450cf88  | igv-frontend | feat(booking): enforce 48h minimum - filter, banner, i18n  | OK     |
+
+---
+
+## PREUVES PRODUCTION (21/02/2026 ~20:50 +02:00)
+
+PREUVE 1 - GET /api/booking/availability?days=14
+  -> First slot: 2026-02-24T12:00:00+02:00 (~63h from now)
+  -> PASS: aucun creneau dans les 48 prochaines heures
+
+PREUVE 2 - POST /api/booking/book avec slot dans ~13h
+  -> HTTP 400
+  -> {"detail":"Ce creneau n'est pas reservable : delai minimum 48h."}
+  -> PASS
+
+PREUVE 3 - POST /api/booking/book avec slot dans +49h
+  -> HTTP 200 (48h rule passed, Google Calendar processed)
+  -> PASS: slot valide non bloque
+
+---
+
+## STATUT FINAL
+
+  [x] _HARD_MIN_NOTICE_HOURS = 48 (non-overridable)
+  [x] GET /availability filtre creneaux < NOW+48h
+  [x] POST /book HTTP 400 si start < NOW+48h
+  [x] 48h guard AVANT check Google Calendar
+  [x] Frontend filtre slots
+  [x] Frontend banniere minNotice48h
+  [x] Frontend guard handleConfirm + HTTP 400 handler
+  [x] i18n FR + EN + HE
+  [x] 3 preuves production validees
+  [x] Push git backend 7d88e04 + frontend 450cf88
+
+Derniere mise a jour: 21/02/2026
