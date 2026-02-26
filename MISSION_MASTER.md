@@ -1,4 +1,90 @@
-﻿# ============================================================
+﻿# ════════════════════════════════════════════════════════════════════
+# MISSION 2026-02-26 : FIX GOOGLE CALENDAR OAUTH TOKEN EXPIRÉ
+# Status: 🔄 IN PROGRESS
+# ════════════════════════════════════════════════════════════════════
+
+## PROBLÈME IDENTIFIÉ
+- `/api/booking/availability` retourna `{"slots":[],"warning":"invalid_grant: Token has been expired or revoked."}`
+- `get_connection_status()` retournait True même avec token expiré (vérifiait seulement existence MongoDB)
+- Cause : refresh token Google OAuth expiré/révoqué (probable 6 mois inactivité ou révocation manuelle)
+
+## CORRECTIONS APPORTÉES (COMMIT EN COURS)
+
+### `app/services/google_calendar_client.py`
+- `get_connection_status()` : maintenant TESTE réellement le token via `creds.refresh(request)`
+  - Si `invalid_grant` → appelle `delete_refresh_token()` → return False
+  - Garantit que `/api/booking/version` reflète l'état RÉEL
+
+### `app/routers/google_oauth_routes.py`
+- Ajout endpoint `/api/google/oauth/temp-connect/{token}` (sans auth, TOTP-protégé)
+  - Token calculé : `HMAC-SHA256(b"igv-gcal-reauth-seed-2026", str(floor(time/600)))[0:8]`
+  - Valide ±20 min
+  - Redirige vers Google OAuth consent
+  - **A SUPPRIMER après reconnexion**
+
+## PROCÉDURE RECONNEXION (après déploiement)
+1. Calculer token : `python -c "import time,hmac,hashlib; print(hmac.new(b'igv-gcal-reauth-seed-2026', str(int(time.time()//600)).encode(), hashlib.sha256).hexdigest()[:8])"`
+2. Visiter : `https://igv-cms-backend.onrender.com/api/google/oauth/temp-connect/{TOKEN}`
+3. S'authentifier avec `israel.growth.venture@gmail.com`
+4. Cliquer Autoriser
+5. Vérifier : `GET /api/booking/availability?days=14` → slots non vides
+
+## CHECKLIST
+- [x] Analyser cause `invalid_grant`
+- [x] Fix `get_connection_status()` — détecte token expiré
+- [x] Ajout endpoint `temp-connect`
+- [ ] Commit + push + déploiement Render
+- [ ] Reconnexion OAuth Google Calendar
+- [ ] Vérifier créneaux disponibles
+- [ ] Supprimer endpoint `temp-connect` (sécurité)
+
+---
+
+# ═══════════════════════════════════════════════════════════════
+# MISSION: PAYONEER PAYMENT INTEGRATION
+# Date: 2026-02-22 | Status: IN PROGRESS
+# ═══════════════════════════════════════════════════════════════
+
+## OBJECTIF
+Intégrer Payoneer "simple" (sans API) : bouton Payer → page Payoneer → /payment/success
+→ proforma immédiate → facture finale après confirmation admin.
+
+## FICHIERS CRÉÉS / MODIFIÉS (BACKEND)
+- `payment_routes.py` : NOUVEAU — collection payment_sessions, 7 endpoints
+  - POST /api/payments/payoneer/init → { session_id, payoneer_url, proforma_url, success_url }
+  - GET /api/payments/{session_id} → statut + urls proforma/facture
+  - POST /api/admin/payments/{session_id}/mark-paid → génère facture finale (admin JWT)
+  - GET /api/admin/payments → liste sessions (admin JWT)
+  - GET /api/invoices/proforma/{session_id}.pdf → servir proforma
+  - GET /api/invoices/final/{session_id}.pdf → servir facture (403 si pas paid)
+- `server.py` : import + include_router(payment_router) ajouté
+
+## ENV VARS À CONFIGURER SUR RENDER
+```
+PAYONEER_PAYMENT_LINK_EUR=<lien Payoneer 900€>
+PAYONEER_PAYMENT_LINK_USD=<lien Payoneer 900$>
+PUBLIC_BASE_URL=https://israelgrowthventure.com
+BACKEND_URL=https://igv-cms-backend.onrender.com
+PAYMENTS_DEFAULT_CURRENCY=EUR
+```
+
+## RÈGLE MÉTIER
+- Proforma générée immédiatement à l'init (ReportLab, en mémoire → base64 MongoDB)
+- Facture définitive JAMAIS disponible tant que status != 'paid'
+- Route /api/invoices/final → HTTP 403 si pending/canceled
+- Fuseau horaire: Asia/Jerusalem (numéros de facture + dates PDF)
+- TVA: non applicable (exo art. 259-1 CGI)
+
+## CHECKLIST
+- [x] payment_routes.py créé
+- [x] server.py mis à jour
+- [ ] ENV VARS configurées sur Render
+- [ ] Commit + push backend
+- [ ] Tests post-déploiement
+
+---
+
+# ============================================================
 # MISSION MASTER - PAYMENT INIT / AUDIT FUNNEL
 # ============================================================
 # Date debut: 18 Fevrier 2026

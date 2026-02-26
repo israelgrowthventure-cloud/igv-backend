@@ -137,8 +137,24 @@ async def build_calendar_service():
 
 
 async def get_connection_status() -> bool:
-    """Returns True if a refresh_token is stored and the OAuth app is configured."""
+    """
+    Returns True only if a refresh_token is stored, the OAuth app is configured,
+    AND the token is actually valid (able to refresh).
+    Clears the stored token if it is expired/revoked.
+    """
     if not GOOGLE_OAUTH_CLIENT_ID or not GOOGLE_OAUTH_CLIENT_SECRET:
         return False
     token = await load_refresh_token()
-    return bool(token)
+    if not token:
+        return False
+    # Eagerly test the token so we don't lie to callers
+    try:
+        import google.auth.transport.requests
+        creds = get_credentials_from_refresh_token(token)
+        request = google.auth.transport.requests.Request()
+        creds.refresh(request)
+        return True
+    except Exception as exc:
+        logger.warning(f"[gcal] get_connection_status: token invalid ({exc}), clearing stored token.")
+        await delete_refresh_token()
+        return False

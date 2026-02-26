@@ -102,6 +102,17 @@ except Exception as e:
     MONETICO_ROUTER_LOADED = False
     monetico_router = None
 
+PAYMENT_ROUTER_ERROR = None
+try:
+    from payment_routes import router as payment_router
+    PAYMENT_ROUTER_LOADED = True
+    logging.info("✓ Payment router loaded successfully")
+except Exception as e:
+    PAYMENT_ROUTER_ERROR = f"{type(e).__name__}: {str(e)}"
+    logging.error(f"✗ Failed to load payment_routes: {PAYMENT_ROUTER_ERROR}")
+    PAYMENT_ROUTER_LOADED = False
+    payment_router = None
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1114,6 +1125,12 @@ if MONETICO_ROUTER_LOADED and monetico_router:
     logging.info("✓ Monetico router registered")
 else:
     logging.warning("✗ Monetico router not registered (import failed)")
+
+if PAYMENT_ROUTER_LOADED and payment_router:
+    app.include_router(payment_router)  # Payoneer Payment Sessions
+    logging.info("✓ Payment router registered")
+else:
+    logging.warning(f"✗ Payment router not registered: {PAYMENT_ROUTER_ERROR}")
 
 # Email templates seed router
 if EMAIL_TEMPLATES_SEED_LOADED and email_templates_seed_router:
