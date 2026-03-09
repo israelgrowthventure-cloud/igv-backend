@@ -654,7 +654,8 @@ async def change_admin_password(
     user: Dict = Depends(get_current_user)
 ):
     """POST /api/admin/change-password - Change current user password"""
-    import hashlib
+    import bcrypt as _bcrypt
+    import hashlib as _hashlib
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
@@ -663,21 +664,35 @@ async def change_admin_password(
         new_password = data.get("new_password") or data.get("newPassword")
         if not current_password or not new_password:
             raise HTTPException(status_code=400, detail="current_password and new_password required")
-        
+        if len(new_password) < 8:
+            raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
         db_user = await current_db.crm_users.find_one({"email": user["email"]})
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
-        
-        # Verify current password
-        stored_hash = db_user.get("password_hash", "")
-        current_hash = hashlib.sha256(current_password.encode()).hexdigest()
-        if stored_hash != current_hash:
+
+        # Read hash from either field (bcrypt users use password_hash OR password)
+        stored_hash = db_user.get("password_hash") or db_user.get("password") or ""
+
+        # Universal verify: bcrypt if hash starts with $2, else SHA256 legacy fallback
+        password_ok = False
+        if stored_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            password_ok = _bcrypt.checkpw(current_password.encode("utf-8"), stored_hash.encode("utf-8"))
+        else:
+            password_ok = (stored_hash == _hashlib.sha256(current_password.encode()).hexdigest())
+
+        if not password_ok:
             raise HTTPException(status_code=400, detail="Current password incorrect")
-        
-        new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+
+        # Hash new password with bcrypt and write to both fields for consistency
+        new_hash = _bcrypt.hashpw(new_password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
         await current_db.crm_users.update_one(
             {"email": user["email"]},
-            {"$set": {"password_hash": new_hash, "updated_at": datetime.now(timezone.utc)}}
+            {"$set": {
+                "password_hash": new_hash,
+                "password": new_hash,
+                "updated_at": datetime.now(timezone.utc)
+            }}
         )
         return {"success": True, "message": "Password updated successfully"}
     except HTTPException:

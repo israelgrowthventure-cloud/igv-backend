@@ -362,17 +362,27 @@ async def change_password(
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Verify current password
-        if not bcrypt.checkpw(current_password.encode('utf-8'), db_user["password"].encode('utf-8')):
+        # Read hash from either field for universal compatibility
+        import hashlib as _hashlib
+        stored_hash = db_user.get("password_hash") or db_user.get("password") or ""
+
+        # Universal verify: bcrypt or SHA256 legacy fallback
+        password_ok = False
+        if stored_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            password_ok = bcrypt.checkpw(current_password.encode('utf-8'), stored_hash.encode('utf-8'))
+        else:
+            password_ok = (stored_hash == _hashlib.sha256(current_password.encode()).hexdigest())
+
+        if not password_ok:
             raise HTTPException(status_code=400, detail="Current password is incorrect")
-        
-        # Hash new password
+
+        # Hash new password with bcrypt
         new_hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        
-        # Update password
+
+        # Update both fields for consistency
         await current_db.crm_users.update_one(
             {"_id": obj_id},
-            {"$set": {"password": new_hashed, "updated_at": datetime.utcnow()}}
+            {"$set": {"password": new_hashed, "password_hash": new_hashed, "updated_at": datetime.utcnow()}}
         )
         
         return {"message": "Password changed successfully"}
