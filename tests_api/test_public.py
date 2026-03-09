@@ -1,3 +1,4 @@
+import os
 """Quick public endpoint tests"""
 import requests
 import json

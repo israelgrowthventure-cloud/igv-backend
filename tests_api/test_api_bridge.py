@@ -20,8 +20,8 @@ from datetime import datetime
 
 # Test configuration
 BASE_URL = os.getenv("TEST_BACKEND_URL", "http://localhost:8000")
-TEST_EMAIL = "postmaster@israelgrowthventure.com"
-TEST_PASSWORD = "Admin@igv2025#"
+TEST_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
+TEST_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 
 @pytest.fixture(scope="module")

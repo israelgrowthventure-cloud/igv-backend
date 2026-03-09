@@ -28,3 +28,12 @@ pip-delete-this-directory.txt
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Test credentials — never commit real passwords
+.env.test.local
+
+
+# Test credentials
+.env.test.local
+.env.local
+

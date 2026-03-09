@@ -4,7 +4,9 @@ Google OAuth 2.0 routes — Authorization Code Flow for admin.
 Mounted under /api/google
 
 Endpoints:
-  GET  /api/google/connect          — Redirect admin to Google consent page
+  GET  /api/google/oauth-url        — Returns the Google consent URL as JSON (for SPA use)
+  GET  /api/google/connect          — Redirect admin to Google consent page (direct browser)
+  GET  /api/google/oauth/connect/{key} — Bootstrap via URL key (no header needed)
   GET  /api/google/oauth/callback   — Exchange code → tokens, store refresh_token
   GET  /api/google/status           — Is Google Calendar connected?
   POST /api/google/disconnect       — Remove stored refresh_token
@@ -101,6 +103,25 @@ def _get_flow():
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/oauth-url")
+async def get_oauth_url(
+    _admin=Depends(_require_admin),
+):
+    """
+    Returns the Google OAuth consent URL as JSON so the SPA can open it
+    via window.open() after authenticating normally via JWT Bearer.
+    Usage: GET /api/google/oauth-url  →  { "auth_url": "https://accounts.google.com/..." }
+    """
+    flow = _get_flow()
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+        include_granted_scopes="false",
+    )
+    logger.info(f"[google-oauth] Returning OAuth URL to SPA: {auth_url[:80]}...")
+    return JSONResponse({"auth_url": auth_url})
+
 
 @router.get("/oauth/start")
 @router.get("/connect")
@@ -213,53 +234,3 @@ async def google_disconnect(_admin=Depends(_require_admin)):
     logger.info("[google-oauth] Google Calendar disconnected by admin.")
     return {"connected": False}
 
-
-# ── Temporary reconnect helper (time-based token, remove after reconnect) ─────
-
-import time as _time
-import hmac as _hmac
-import hashlib as _hashlib
-
-_TEMP_REAUTH_SEED = b"igv-gcal-reauth-seed-2026"  # hardcoded — change after reconnect
-
-
-def _valid_temp_token(token: str) -> bool:
-    """
-    Validates a short-lived hex token computed as:
-        HMAC-SHA256(seed, str(floor(unix_ts / 600)))[0:8]
-    Valid for any of 5 consecutive 10-min windows (±20 min tolerance).
-    """
-    now_window = int(_time.time() // 600)
-    for offset in (-2, -1, 0, 1, 2):
-        t = str(now_window + offset).encode()
-        expected = _hmac.new(_TEMP_REAUTH_SEED, t, _hashlib.sha256).hexdigest()[:8]
-        if _hmac.compare_digest(token.lower(), expected):
-            return True
-    return False
-
-
-@router.get("/oauth/temp-connect/{token}", include_in_schema=False)
-async def oauth_temp_connect(token: str):
-    """
-    Temporary reconnect endpoint — no admin-auth required, protected by time-based token.
-    Compute token locally:
-        $t = [Math]::Floor([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() / 600)
-        $seed = [System.Text.Encoding]::UTF8.GetBytes("igv-gcal-reauth-seed-2026")
-        $hmac = [System.Security.Cryptography.HMACSHA256]::new($seed)
-        $hex  = [BitConverter]::ToString($hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$t"))) -replace '-',''
-        Write-Host $hex.Substring(0,8).ToLower()
-    Then visit: /api/google/oauth/temp-connect/{token}
-    REMOVE THIS ENDPOINT after Google Calendar is reconnected.
-    """
-    if not _valid_temp_token(token):
-        raise HTTPException(403, "Invalid or expired reauth token.")
-    if not GOOGLE_OAUTH_CLIENT_ID or not GOOGLE_OAUTH_CLIENT_SECRET:
-        raise HTTPException(503, "Google OAuth not configured (missing client_id/secret).")
-    flow = _get_flow()
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        include_granted_scopes="false",
-    )
-    logger.info("[google-oauth] Temp-connect redirect to Google consent.")
-    return RedirectResponse(auth_url)

@@ -83,6 +83,75 @@ async def list_mini_analyses(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# NOTE: /stats MUST be registered before /{analysis_id} — FastAPI uses first-match routing
+@router.get("/mini-analyses/stats")
+async def get_mini_analysis_stats(
+    period: str = Query("month", regex="^(week|month|quarter|year)$"),
+    user: Dict = Depends(get_current_user)
+):
+    """Get mini-analysis statistics"""
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        now = datetime.now(timezone.utc)
+        if period == "week":
+            start_date = now - timedelta(days=7)
+        elif period == "month":
+            start_date = now - timedelta(days=30)
+        elif period == "quarter":
+            start_date = now - timedelta(days=90)
+        else:
+            start_date = now - timedelta(days=365)
+        
+        # Count by status
+        pipeline = [
+            {"$match": {"created_at": {"$gte": start_date}}},
+            {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
+        ]
+        
+        status_counts = {}
+        async for doc in db.mini_analyses.aggregate(pipeline):
+            status_counts[doc["_id"] or "pending"] = doc["count"]
+        
+        # Also check leads with mini-analyse source
+        leads_pipeline = [
+            {"$match": {
+                "source": {"$regex": "mini.?analy", "$options": "i"},
+                "created_at": {"$gte": start_date}
+            }},
+            {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
+        ]
+        
+        async for doc in db.leads.aggregate(leads_pipeline):
+            key = doc["_id"] or "pending"
+            status_counts[key] = status_counts.get(key, 0) + doc["count"]
+        
+        total = sum(status_counts.values())
+        
+        # Conversion rate
+        converted = await db.leads.count_documents({
+            "source": {"$regex": "mini.?analy", "$options": "i"},
+            "status": "converted",
+            "created_at": {"$gte": start_date}
+        })
+        
+        conversion_rate = round((converted / total) * 100, 1) if total > 0 else 0
+        
+        return {
+            "period": period,
+            "total": total,
+            "by_status": status_counts,
+            "converted": converted,
+            "conversion_rate": conversion_rate
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting mini-analysis stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/mini-analyses/{analysis_id}")
 async def get_mini_analysis(
     analysis_id: str,
@@ -407,77 +476,10 @@ async def convert_mini_analysis_to_lead(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/mini-analyses/stats")
-async def get_mini_analysis_stats(
-    period: str = Query("month", regex="^(week|month|quarter|year)$"),
-    user: Dict = Depends(get_current_user)
-):
-    """Get mini-analysis statistics"""
-    db = get_db()
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        now = datetime.now(timezone.utc)
-        if period == "week":
-            start_date = now - timedelta(days=7)
-        elif period == "month":
-            start_date = now - timedelta(days=30)
-        elif period == "quarter":
-            start_date = now - timedelta(days=90)
-        else:
-            start_date = now - timedelta(days=365)
-        
-        # Count by status
-        pipeline = [
-            {"$match": {"created_at": {"$gte": start_date}}},
-            {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
-        ]
-        
-        status_counts = {}
-        async for doc in db.mini_analyses.aggregate(pipeline):
-            status_counts[doc["_id"] or "pending"] = doc["count"]
-        
-        # Also check leads with mini-analyse source
-        leads_pipeline = [
-            {"$match": {
-                "source": {"$regex": "mini.?analy", "$options": "i"},
-                "created_at": {"$gte": start_date}
-            }},
-            {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
-        ]
-        
-        async for doc in db.leads.aggregate(leads_pipeline):
-            key = doc["_id"] or "pending"
-            status_counts[key] = status_counts.get(key, 0) + doc["count"]
-        
-        total = sum(status_counts.values())
-        
-        # Conversion rate
-        converted = await db.leads.count_documents({
-            "source": {"$regex": "mini.?analy", "$options": "i"},
-            "status": "converted",
-            "created_at": {"$gte": start_date}
-        })
-        
-        conversion_rate = round((converted / total) * 100, 1) if total > 0 else 0
-        
-        return {
-            "period": period,
-            "total": total,
-            "by_status": status_counts,
-            "converted": converted,
-            "conversion_rate": conversion_rate
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting mini-analysis stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ==========================================
 # POINT 12: LOGS D'AUDIT COMPLETS
 # ==========================================
+# NOTE: /mini-analyses/stats was moved above /{analysis_id} to avoid route shadowing
 
 @router.get("/audit-logs")
 async def list_audit_logs(

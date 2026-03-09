@@ -16,8 +16,8 @@ import os
 
 # Test configuration
 BASE_URL = os.getenv("TEST_BACKEND_URL", "https://igv-cms-backend.onrender.com")
-TEST_EMAIL = "postmaster@israelgrowthventure.com"
-TEST_PASSWORD = "Admin@igv2025#"
+TEST_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
+TEST_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 
 class TestBridgeRoutesNotFound:

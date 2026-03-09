@@ -10,12 +10,13 @@ ATTENTION: Ce script teste la PRODUCTION
 import requests
 import json
 import sys
+import os
 from datetime import datetime
 
 # Configuration Production
 BASE_URL = "https://igv-cms-backend.onrender.com"
-ADMIN_EMAIL = "postmaster@israelgrowthventure.com"
-ADMIN_PASSWORD = "Admin@igv2025#"
+ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 # Résultats
 results = []
