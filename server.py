@@ -43,6 +43,7 @@ from gdpr_routes import router as gdpr_router
 from quota_queue_routes import router as quota_router
 from admin_user_routes import router as admin_user_router
 from cms_routes import router as cms_router  # Phase 5: CMS, Media & Auth
+from cms_routes import upsert_about_pages
 from blog_routes import router as blog_router  # Blog articles CRUD
 
 # Mission 12 Points - Advanced CRM Features
@@ -1209,6 +1210,7 @@ async def startup_db_init():
             
             # Create default admin if not exists
             await create_default_admin_if_not_exists()
+            await upsert_about_pages(db)
             
             # ❌ DISABLED: Was preventing multi-user setup
             # await cleanup_other_users()

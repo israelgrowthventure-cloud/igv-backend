@@ -12,6 +12,7 @@ import uuid
 import hashlib
 import jwt
 from motor.motor_asyncio import AsyncIOMotorClient
+from app.services.about_page_content import build_about_page_document
 
 # Import auth middleware
 import sys
@@ -170,6 +171,10 @@ async def get_page_content_public(page: str, language: str = 'fr'):
             "last_updated": None
         }
     
+    # Prefer canonical structured content when available.
+    if content.get("content"):
+        return content
+
     # If flat_content exists, return it merged at root level
     if 'flat_content' in content:
         flat_data = content['flat_content'].copy()
@@ -207,6 +212,10 @@ async def get_page_content(page: str, language: str = 'fr', user: Dict = Depends
             "last_updated": None
         }
     
+    # Prefer canonical structured content when available.
+    if content.get("content"):
+        return content
+
     # If flat_content exists, return it merged at root level
     if 'flat_content' in content:
         flat_data = content['flat_content'].copy()
@@ -836,6 +845,45 @@ PAGES_CONTENT = {
     }
 }
 
+
+async def upsert_about_pages(db) -> dict:
+    """Rebuild the About page in FR/EN/HE while preserving the current photo if present."""
+    now = datetime.now(timezone.utc).isoformat()
+    updated_languages = []
+
+    for language in ("fr", "en", "he"):
+        existing = await db.page_content.find_one({"page": "about", "language": language})
+        existing_html = None
+
+        if existing:
+            existing_html = (
+                existing.get("content", {}).get("main", {}).get("html")
+                or existing.get("flat_content", {}).get("html")
+                or existing.get("flat_content", {}).get("content")
+            )
+
+        doc = build_about_page_document(language, existing_html=existing_html)
+        doc["version"] = (existing.get("version", 0) + 1) if existing else 1
+        doc["updated_at"] = now
+
+        await db.page_content.update_one(
+            {"page": "about", "language": language},
+            {
+                "$set": doc,
+                "$unset": {
+                    "flat_content": "",
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                    "created_by": "about_page_refactor",
+                },
+            },
+            upsert=True,
+        )
+        updated_languages.append(language)
+
+    return {"page": "about", "languages": updated_languages}
+
 @router.post("/cms/init-pages")
 async def init_cms_pages(token: str = None, user: Dict = Depends(get_current_user_optional)):
     """
@@ -858,6 +906,8 @@ async def init_cms_pages(token: str = None, user: Dict = Depends(get_current_use
     updated = 0
     
     for page_key, langs in PAGES_CONTENT.items():
+        if page_key == "about":
+            continue
         for lang, data in langs.items():
             doc = {
                 "page": page_key,
@@ -886,6 +936,9 @@ async def init_cms_pages(token: str = None, user: Dict = Depends(get_current_use
                 created += 1
             elif result.modified_count > 0:
                 updated += 1
+
+    about_result = await upsert_about_pages(db)
+    updated += len(about_result["languages"])
     
     # Get list of pages for confirmation
     pages = await db.page_content.distinct("page")
@@ -895,7 +948,8 @@ async def init_cms_pages(token: str = None, user: Dict = Depends(get_current_use
         "created": created,
         "updated": updated,
         "total_pages": len(pages),
-        "pages": pages
+        "pages": pages,
+        "about_rebuilt": about_result,
     }
 
 
