@@ -1,25 +1,34 @@
 """
-Google OAuth 2.0 routes — Authorization Code Flow for admin.
+Google OAuth 2.0 routes — Authorization Code Flow (confidential client, NO PKCE).
+
+WHY NO PKCE:
+  PKCE is designed for PUBLIC clients (SPA, mobile) that cannot hold a client_secret.
+  This backend IS a confidential client — it stores GOOGLE_OAUTH_CLIENT_SECRET securely.
+  google-auth-oauthlib ≥1.0 auto-generates a code_verifier inside the Flow instance on
+  authorization_url(); recreating a new Flow in the callback loses that verifier and
+  Google returns "invalid_grant: Missing code verifier".
+  Fix: build the auth URL manually and exchange the code via direct HTTP POST — no Flow
+  object in the callback, no PKCE, no state mismatch possible.
 
 Mounted under /api/google
 
 Endpoints:
-  GET  /api/google/oauth-url        — Returns the Google consent URL as JSON (for SPA use)
-  GET  /api/google/connect          — Redirect admin to Google consent page (direct browser)
-  GET  /api/google/oauth/connect/{key} — Bootstrap via URL key (no header needed)
-  GET  /api/google/oauth/callback   — Exchange code → tokens, store refresh_token
-  GET  /api/google/status           — Is Google Calendar connected?
-  POST /api/google/disconnect       — Remove stored refresh_token
-
-Auth guard: accepts either
-  - A valid JWT Bearer token with role=admin (existing CRM auth)
-  - Or header X-ADMIN-OAUTH-KEY matching env ADMIN_OAUTH_KEY
+  GET  /api/google/oauth/connect/{key}  — Bootstrap: redirect to Google (URL-key auth)
+  GET  /api/google/oauth/start-now      — Same via ?key= query param
+  GET  /api/google/oauth/start          — Redirect (JWT/header auth)
+  GET  /api/google/connect              — Redirect alias (JWT/header auth)
+  GET  /api/google/oauth-url            — Return consent URL as JSON (SPA helper)
+  GET  /api/google/oauth/callback       — Receive code, exchange → refresh_token (NO PKCE)
+  GET  /api/google/status               — Is Google Calendar connected?
+  POST /api/google/disconnect           — Remove stored refresh_token
 """
 
 import os
 import logging
 from typing import Optional
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Request, HTTPException, Header, Depends
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 
@@ -37,7 +46,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/google", tags=["google-oauth"])
 
-ADMIN_OAUTH_KEY = os.environ.get("ADMIN_OAUTH_KEY", "")
+ADMIN_OAUTH_KEY       = os.environ.get("ADMIN_OAUTH_KEY", "")
+_GOOGLE_AUTH_URI      = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URI     = "https://oauth2.googleapis.com/token"
 
 
 # ── Auth guard ────────────────────────────────────────────────────────────────
@@ -76,89 +87,122 @@ async def _require_admin(
     raise HTTPException(401, "Missing or invalid admin credentials. Use X-ADMIN-OAUTH-KEY header or JWT Bearer.")
 
 
-# ── OAuth flow helpers ────────────────────────────────────────────────────────
+# ── Auth URL builder (NO PKCE) ────────────────────────────────────────────────
 
-def _get_flow():
-    """Build a Google OAuth2 InstalledAppFlow-style web server flow."""
-    from google_auth_oauthlib.flow import Flow
-
+def _build_auth_url() -> str:
+    """
+    Build the Google consent URL manually.
+    We deliberately do NOT use google-auth-oauthlib Flow.authorization_url() because
+    version ≥1.0 auto-injects a PKCE code_challenge that we cannot honour at callback
+    time (stateless server → new Flow object = code_verifier gone → invalid_grant).
+    A confidential client with client_secret does not need PKCE.
+    """
     if not GOOGLE_OAUTH_CLIENT_ID or not GOOGLE_OAUTH_CLIENT_SECRET:
         raise HTTPException(503, "GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET not configured.")
 
-    client_config = {
-        "web": {
-            "client_id":     GOOGLE_OAUTH_CLIENT_ID,
-            "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
-            "auth_uri":      "https://accounts.google.com/o/oauth2/auth",
-            "token_uri":     "https://oauth2.googleapis.com/token",
-            "redirect_uris": [GOOGLE_OAUTH_REDIRECT_URI],
-        }
+    scope = " ".join(SCOPES)
+    params = {
+        "client_id":     GOOGLE_OAUTH_CLIENT_ID,
+        "redirect_uri":  GOOGLE_OAUTH_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         scope,
+        "access_type":   "offline",
+        "prompt":        "consent",
+        # NO code_challenge / code_challenge_method — confidential client, PKCE not needed
     }
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=SCOPES,
-        redirect_uri=GOOGLE_OAUTH_REDIRECT_URI,
+    url = f"{_GOOGLE_AUTH_URI}?{urlencode(params)}"
+    logger.info(
+        "[google-oauth] Auth URL built (no PKCE). "
+        f"redirect_uri={GOOGLE_OAUTH_REDIRECT_URI}"
     )
-    return flow
+    return url
+
+
+# ── Token exchange helper (direct HTTP POST, NO PKCE) ─────────────────────────
+
+async def _exchange_code_for_tokens(code: str) -> dict:
+    """
+    Exchange a Google authorization code for access + refresh tokens.
+    Uses direct HTTP POST — no Flow object, no PKCE code_verifier.
+    Correct for confidential (server-side) OAuth 2.0 clients.
+    """
+    logger.info("[google-oauth] Exchanging auth code via direct POST to token endpoint…")
+
+    payload = {
+        "code":          code,
+        "client_id":     GOOGLE_OAUTH_CLIENT_ID,
+        "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "redirect_uri":  GOOGLE_OAUTH_REDIRECT_URI,
+        "grant_type":    "authorization_code",
+        # NO code_verifier — we never sent code_challenge in the auth URL
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(_GOOGLE_TOKEN_URI, data=payload)
+
+    logger.info(f"[google-oauth] Token endpoint responded HTTP {resp.status_code}")
+
+    if resp.status_code != 200:
+        body = resp.text[:300]
+        logger.error(f"[google-oauth] Token exchange FAILED: {body}")
+        raise RuntimeError(f"HTTP {resp.status_code}: {body}")
+
+    tokens = resp.json()
+    logger.info(
+        "[google-oauth] Token exchange OK. refresh_token present: %s",
+        bool(tokens.get("refresh_token")),
+    )
+    return tokens
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/oauth-url")
-async def get_oauth_url(
-    _admin=Depends(_require_admin),
-):
+async def get_oauth_url(_admin=Depends(_require_admin)):
     """
-    Returns the Google OAuth consent URL as JSON so the SPA can open it
-    via window.open() after authenticating normally via JWT Bearer.
-    Usage: GET /api/google/oauth-url  →  { "auth_url": "https://accounts.google.com/..." }
+    Returns the Google OAuth consent URL as JSON so the SPA can open it.
+    GET /api/google/oauth-url  →  { "auth_url": "https://accounts.google.com/..." }
     """
-    flow = _get_flow()
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        include_granted_scopes="false",
-    )
-    logger.info(f"[google-oauth] Returning OAuth URL to SPA: {auth_url[:80]}...")
+    auth_url = _build_auth_url()
+    logger.info(f"[google-oauth] Returning OAuth URL to SPA: {auth_url[:80]}…")
     return JSONResponse({"auth_url": auth_url})
 
 
 @router.get("/oauth/start")
 @router.get("/connect")
-async def google_connect(
-    _admin=Depends(_require_admin),
-):
+async def google_connect(_admin=Depends(_require_admin)):
     """
-    Generate the Google OAuth consent URL and redirect the admin to it.
-    access_type=offline + prompt=consent ensures we get a refresh_token.
+    Redirect admin to Google consent page (JWT Bearer or header key auth).
     Accessible via /api/google/oauth/start or /api/google/connect.
     """
-    flow = _get_flow()
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        include_granted_scopes="false",
-    )
-    logger.info(f"[google-oauth] Redirecting admin to Google consent: {auth_url[:80]}...")
+    auth_url = _build_auth_url()
+    logger.info(f"[google-oauth] Authenticated start → redirecting to Google consent.")
+    return RedirectResponse(auth_url)
+
+
+@router.get("/oauth/start-now", include_in_schema=False)
+async def oauth_connect_query(key: str = ""):
+    """
+    Bootstrap via ?key= query param — no auth header needed, usable in any browser.
+    Usage: /api/google/oauth/start-now?key=<ADMIN_OAUTH_KEY>
+    """
+    if not ADMIN_OAUTH_KEY or key != ADMIN_OAUTH_KEY:
+        raise HTTPException(403, "Forbidden: wrong or missing key")
+    auth_url = _build_auth_url()
+    logger.info("[google-oauth] Bootstrap redirect (query key).")
     return RedirectResponse(auth_url)
 
 
 @router.get("/oauth/connect/{admin_key}", include_in_schema=False)
 async def oauth_connect_bootstrap(admin_key: str):
     """
-    Bootstrap public — ouvrable directement dans un navigateur.
-    Vérifie admin_key dans l'URL, puis redirige vers Google consent.
-    Usage : /api/google/oauth/connect/<ADMIN_OAUTH_KEY>
+    Bootstrap via URL path param — clé dans l'URL.
+    Usage: /api/google/oauth/connect/<ADMIN_OAUTH_KEY>
     """
     if not ADMIN_OAUTH_KEY or admin_key != ADMIN_OAUTH_KEY:
         raise HTTPException(403, "Forbidden")
-    flow = _get_flow()
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        include_granted_scopes="false",
-    )
-    logger.info("[google-oauth] Bootstrap redirect via URL key.")
+    auth_url = _build_auth_url()
+    logger.info("[google-oauth] Bootstrap redirect (URL key).")
     return RedirectResponse(auth_url)
 
 
@@ -186,28 +230,39 @@ async def google_oauth_callback(
     if not code:
         raise HTTPException(400, "Missing authorization code from Google.")
 
+    # ── Direct HTTP POST to Google — NO PKCE, confidential client ────────────
     try:
-        flow = _get_flow()
-        flow.fetch_token(code=code)
-        creds = flow.credentials
+        tokens = await _exchange_code_for_tokens(code)
     except Exception as exc:
-        logger.exception(f"[google-oauth] Token exchange failed: {exc}")
-        raise HTTPException(502, f"Token exchange failed: {exc}")
-
-    if not creds.refresh_token:
-        logger.error("[google-oauth] No refresh_token returned — was prompt=consent omitted?")
+        logger.error(f"[google-oauth] Token exchange exception: {exc}")
         return HTMLResponse(
-            """<html><body style="font-family:sans-serif;padding:40px">
-            <h2 style="color:orange">⚠️ Pas de refresh_token</h2>
-            <p>Google n'a pas retourné de refresh_token. 
-            Déconnectez l'application sur <a href="https://myaccount.google.com/permissions" target="_blank">myaccount.google.com/permissions</a>
-            puis relancez /api/google/connect.</p>
+            f"""<html><body style="font-family:sans-serif;padding:40px">
+            <h2 style="color:red">❌ Échec échange de code</h2>
+            <pre style="background:#fee2e2;padding:12px;border-radius:6px;white-space:pre-wrap">{exc}</pre>
+            <p>Vérifiez que le Redirect URI dans Google Cloud Console correspond à :
+            <br><code>{GOOGLE_OAUTH_REDIRECT_URI}</code></p>
+            </body></html>""",
+            status_code=502,
+        )
+
+    refresh_token = tokens.get("refresh_token")
+
+    if not refresh_token:
+        logger.warning("[google-oauth] No refresh_token returned — may already be authorized. Revoke and retry.")
+        return HTMLResponse(
+            f"""<html><body style="font-family:sans-serif;padding:40px">
+            <h2 style="color:orange">⚠️ Pas de refresh_token retourné</h2>
+            <p>Google ne retourne un refresh_token qu'à la <strong>première</strong> autorisation
+            (ou après révocation explicite).</p>
+            <p>Révoquez l'accès sur
+            <a href="https://myaccount.google.com/permissions" target="_blank">
+            myaccount.google.com/permissions</a> puis relancez.</p>
             </body></html>""",
             status_code=200,
         )
 
-    await save_refresh_token(creds.refresh_token)
-    logger.info("[google-oauth] refresh_token stored successfully.")
+    await save_refresh_token(refresh_token)
+    logger.info("[google-oauth] ✅ refresh_token stored in MongoDB + env.")
 
     return HTMLResponse(
         """<html><body style="font-family:sans-serif;padding:40px;background:#f0fdf4">
