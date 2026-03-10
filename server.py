@@ -121,7 +121,7 @@ load_dotenv(ROOT_DIR / '.env')
 # JWT & Admin configuration (from environment only)
 JWT_SECRET = os.getenv('JWT_SECRET')
 JWT_ALGORITHM = 'HS256'
-JWT_EXPIRATION_HOURS = 24
+JWT_EXPIRATION_HOURS = 168  # 7 days — avoids frequent session drops
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
 BOOTSTRAP_TOKEN = os.getenv('BOOTSTRAP_TOKEN')
