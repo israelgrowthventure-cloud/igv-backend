@@ -97,6 +97,17 @@ async def delete_refresh_token() -> None:
             logger.error(f"[gcal] Failed to delete refresh_token: {e}")
 
 
+def _is_revoked_or_invalid_grant(exc: Exception) -> bool:
+    """Hard-delete only for actual token revocation cases."""
+    message = str(exc).lower()
+    return (
+        "invalid_grant" in message
+        or "token has been expired or revoked" in message
+        or "reauth related error" in message
+        or "invalid refresh token" in message
+    )
+
+
 # ── Credentials / service ─────────────────────────────────────────────────────
 
 def get_credentials_from_refresh_token(refresh_token: str):
@@ -155,6 +166,9 @@ async def get_connection_status() -> bool:
         creds.refresh(request)
         return True
     except Exception as exc:
-        logger.warning(f"[gcal] get_connection_status: token invalid ({exc}), clearing stored token.")
-        await delete_refresh_token()
+        if _is_revoked_or_invalid_grant(exc):
+            logger.warning(f"[gcal] get_connection_status: token revoked/invalid ({exc}), clearing stored token.")
+            await delete_refresh_token()
+        else:
+            logger.warning(f"[gcal] get_connection_status: transient refresh failure ({exc}), keeping stored token.")
         return False
