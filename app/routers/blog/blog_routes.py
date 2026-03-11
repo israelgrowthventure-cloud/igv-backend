@@ -326,6 +326,35 @@ async def list_articles_admin(
     }
 
 
+@router.post("/admin/migrate-group-slugs")
+async def admin_migrate_group_slugs(user: Dict = Depends(get_current_user)):
+    """
+    Force-trigger the group_slug migration on all seeded blog articles.
+    Idempotent: only updates articles where group_slug is null or missing.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    GROUPS = [
+        ("retail-ia-israel-2026",
+         ["ia-retail-israelien-2026", "ai-israeli-retail-2026", "ai-retail-israel-2026-he"]),
+        ("opening-network-israel-guide",
+         ["ouvrir-reseau-israel-guide", "opening-network-israel-guide", "opening-network-israel-guide-he"]),
+        ("food-courts-premium",
+         ["essor-food-courts-premium", "rise-premium-food-courts", "rise-premium-food-courts-he"]),
+    ]
+    total = 0
+    for group_slug, slugs in GROUPS:
+        for slug in slugs:
+            result = await db.blog_articles.update_many(
+                {"slug": slug, "$or": [{"group_slug": {"$exists": False}}, {"group_slug": None}]},
+                {"$set": {"group_slug": group_slug}}
+            )
+            total += result.modified_count
+    return {"success": True, "articles_updated": total}
+
+
 @router.post("/admin/articles")
 async def create_article(
     data: ArticleCreate,

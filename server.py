@@ -1251,7 +1251,7 @@ async def migrate_blog_group_slugs(db_conn):
     for group_slug, slugs in GROUPS:
         for slug in slugs:
             result = await db_conn.blog_articles.update_many(
-                {"slug": slug, "group_slug": {"$exists": False}},
+                {"slug": slug, "$or": [{"group_slug": {"$exists": False}}, {"group_slug": None}]},
                 {"$set": {"group_slug": group_slug}}
             )
             total += result.modified_count
