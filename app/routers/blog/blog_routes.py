@@ -35,6 +35,7 @@ class ArticleCreate(BaseModel):
     author: Optional[str] = None
     translate_en: bool = Field(default=False)
     translate_he: bool = Field(default=False)
+    group_slug: Optional[str] = None  # Cross-language group identifier
 
 
 class ArticleUpdate(BaseModel):
@@ -48,6 +49,7 @@ class ArticleUpdate(BaseModel):
     published: Optional[bool] = None
     tags: Optional[List[str]] = None
     author: Optional[str] = None
+    group_slug: Optional[str] = None  # Cross-language group identifier
 
 
 # ==========================================
@@ -199,6 +201,35 @@ async def list_articles_public(
     }
 
 
+@router.get("/articles/{slug}/related")
+async def get_article_related(slug: str):
+    """
+    Returns the translated slugs for all language versions of an article.
+    Uses the group_slug field to find related articles across languages.
+    Response: {"translations": {"fr": "slug-fr", "en": "slug-en", "he": "slug-he"}, "group_slug": ".."}
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    article = await db.blog_articles.find_one({"slug": slug})
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    group_slug = article.get("group_slug")
+    if not group_slug:
+        # No group set — return only the known language
+        return {"translations": {article.get("language", "fr"): slug}, "group_slug": None}
+
+    cursor = db.blog_articles.find(
+        {"group_slug": group_slug, "published": True},
+        {"slug": 1, "language": 1, "_id": 0}
+    )
+    docs = await cursor.to_list(length=10)
+    translations = {doc["language"]: doc["slug"] for doc in docs}
+    return {"translations": translations, "group_slug": group_slug}
+
+
 @router.get("/articles/{slug}")
 async def get_article_public(slug: str, language: str = Query("fr")):
     """
@@ -319,6 +350,9 @@ async def create_article(
     
     now = datetime.now(timezone.utc)
     
+    # group_slug: cross-language link identifier — default to article slug
+    group_slug = data.group_slug or slug
+
     article_doc = {
         "title": data.title,
         "slug": slug,
@@ -333,7 +367,8 @@ async def create_article(
         "views": 0,
         "created_at": now,
         "updated_at": now,
-        "created_by": user.get("email")
+        "created_by": user.get("email"),
+        "group_slug": group_slug,
     }
     
     result = await db.blog_articles.insert_one(article_doc)
@@ -359,7 +394,8 @@ async def create_article(
             "created_at": now,
             "updated_at": now,
             "created_by": user.get("email"),
-            "translated_from": str(result.inserted_id)
+            "translated_from": str(result.inserted_id),
+            "group_slug": group_slug,
         }
         await db.blog_articles.insert_one(en_doc)
         translations_created.append("en")
@@ -381,7 +417,8 @@ async def create_article(
             "created_at": now,
             "updated_at": now,
             "created_by": user.get("email"),
-            "translated_from": str(result.inserted_id)
+            "translated_from": str(result.inserted_id),
+            "group_slug": group_slug,
         }
         await db.blog_articles.insert_one(he_doc)
         translations_created.append("he")
@@ -535,6 +572,53 @@ async def toggle_publish(
         "success": True,
         "published": new_status,
         "message": f"Article {'published' if new_status else 'unpublished'}"
+    }
+
+
+# ==========================================
+# MIGRATION — SET GROUP SLUGS
+# ==========================================
+
+@router.post("/admin/migrate-group-slugs")
+async def migrate_group_slugs(user: Dict = Depends(get_current_user)):
+    """
+    One-time migration: sets group_slug on the 9 seeded articles so that
+    the language switcher can find the correct translation per language.
+    Safe to run multiple times (idempotent).
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    # Known article groups: each tuple = (group_slug, [slugs in this group])
+    GROUPS = [
+        (
+            "retail-ia-israel-2026",
+            ["ia-retail-israelien-2026", "ai-israeli-retail-2026", "ai-retail-israel-2026-he"],
+        ),
+        (
+            "opening-network-israel-guide",
+            ["ouvrir-reseau-israel-guide", "opening-network-israel-guide", "opening-network-israel-guide-he"],
+        ),
+        (
+            "food-courts-premium",
+            ["essor-food-courts-premium", "rise-premium-food-courts", "rise-premium-food-courts-he"],
+        ),
+    ]
+
+    updated = 0
+    for group_slug, slugs in GROUPS:
+        for slug in slugs:
+            result = await db.blog_articles.update_many(
+                {"slug": slug},
+                {"$set": {"group_slug": group_slug}}
+            )
+            updated += result.modified_count
+
+    return {
+        "success": True,
+        "message": f"group_slug set on {updated} articles",
+        "groups": [g for g, _ in GROUPS],
     }
 
 

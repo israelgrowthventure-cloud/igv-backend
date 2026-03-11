@@ -1220,12 +1220,45 @@ async def startup_db_init():
             await create_default_admin_if_not_exists()
             await upsert_about_pages(db)
             
+            # Migrate: set group_slug on blog articles so language switcher works
+            await migrate_blog_group_slugs(db)
+            
             # ❌ DISABLED: Was preventing multi-user setup
             # await cleanup_other_users()
             logging.info("✓ Multi-user mode enabled")
             
         except Exception as e:
             logging.warning(f"Index creation skipped: {e}")
+
+
+async def migrate_blog_group_slugs(db_conn):
+    """
+    Idempotent migration: sets group_slug on the seeded blog articles.
+    Allows the language switcher to find the correct translation slug.
+    Runs at startup; only updates articles that don't yet have group_slug set.
+    """
+    if db_conn is None:
+        return
+    GROUPS = [
+        ("retail-ia-israel-2026",
+         ["ia-retail-israelien-2026", "ai-israeli-retail-2026", "ai-retail-israel-2026-he"]),
+        ("opening-network-israel-guide",
+         ["ouvrir-reseau-israel-guide", "opening-network-israel-guide", "opening-network-israel-guide-he"]),
+        ("food-courts-premium",
+         ["essor-food-courts-premium", "rise-premium-food-courts", "rise-premium-food-courts-he"]),
+    ]
+    total = 0
+    for group_slug, slugs in GROUPS:
+        for slug in slugs:
+            result = await db_conn.blog_articles.update_many(
+                {"slug": slug, "group_slug": {"$exists": False}},
+                {"$set": {"group_slug": group_slug}}
+            )
+            total += result.modified_count
+    if total:
+        logging.info(f"✓ Blog group_slug migration: {total} articles updated")
+    else:
+        logging.info("✓ Blog group_slug migration: already up-to-date")
 
 
 async def create_default_admin_if_not_exists():
