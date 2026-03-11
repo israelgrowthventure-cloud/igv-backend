@@ -21,6 +21,16 @@ services:
         sync: false
       - key: CMS_PASSWORD
         sync: false
+      - key: ADMIN_OAUTH_KEY
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        value: https://igv-cms-backend.onrender.com/api/google/oauth/callback
+      - key: GOOGLE_CALENDAR_ID
+        value: primary
       - key: CORS_ORIGINS
         value: https://israelgrowthventure.com,https://www.israelgrowthventure.com,https://audit.israelgrowthventure.com,https://www.audit.israelgrowthventure.com
       - key: GEMINI_API_KEY

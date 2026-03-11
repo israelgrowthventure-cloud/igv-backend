@@ -32,26 +32,34 @@ except ImportError as e:
     logging.warning(f"⚠️ Email libraries not available in server.py: {str(e)}")
     EMAIL_LIBS_AVAILABLE = False
 
-# Import AI routes
-from ai_routes import router as ai_router
-from mini_analysis_routes import router as mini_analysis_router
-from extended_routes import router as extended_router
-from tracking_routes import router as tracking_router
-from admin_routes import router as admin_router
-from companies_routes import router as companies_router
-from gdpr_routes import router as gdpr_router
-from quota_queue_routes import router as quota_router
-from admin_user_routes import router as admin_user_router
-from cms_routes import router as cms_router  # Phase 5: CMS, Media & Auth
-from cms_routes import upsert_about_pages
-from blog_routes import router as blog_router  # Blog articles CRUD
+# ── AI / Analysis ─────────────────────────────────────────────
+from app.routers.ai.ai_routes import router as ai_router
+from app.routers.ai.mini_analysis_routes import router as mini_analysis_router
+from app.routers.ai.quota_queue_routes import router as quota_router
 
-# Mission 12 Points - Advanced CRM Features
-from quality_routes import router as quality_router  # Point 2: Quality/Duplicates
-from automation_kpi_routes import router as automation_kpi_router  # Points 3-6: Automation, Next Action, KPIs, Sources
-from search_rbac_routes import router as search_rbac_router  # Points 7-8: Global Search, RBAC
-from email_export_routes import router as email_export_router  # Points 9, 11: Emails, Exports
-from mini_analysis_audit_routes import router as mini_audit_router  # Points 10, 12: Mini-Analysis, Audit
+# ── Site / Public ──────────────────────────────────────────────
+from app.routers.site.extended_routes import router as extended_router
+from app.routers.site.tracking_routes import router as tracking_router
+from app.routers.site.gdpr_routes import router as gdpr_router
+
+# ── Admin ──────────────────────────────────────────────────────
+from app.routers.admin.admin_routes import router as admin_router
+from app.routers.admin.admin_user_routes import router as admin_user_router
+
+# ── CMS ────────────────────────────────────────────────────────
+from app.routers.cms.cms_routes import router as cms_router
+from app.routers.cms.cms_routes import upsert_about_pages
+
+# ── Blog ───────────────────────────────────────────────────────
+from app.routers.blog.blog_routes import router as blog_router
+
+# ── CRM ────────────────────────────────────────────────────────
+from app.routers.crm.companies_routes import router as companies_router
+from app.routers.crm.quality_routes import router as quality_router
+from app.routers.crm.automation_kpi_routes import router as automation_kpi_router
+from app.routers.crm.search_rbac_routes import router as search_rbac_router
+from app.routers.crm.email_export_routes import router as email_export_router
+from app.routers.crm.mini_analysis_audit_routes import router as mini_audit_router
 
 # ===== PHASE 2: UNIFIED CRM ROUTER =====
 # ALL CRM routes centralized in app/routers/crm/main.py
@@ -84,7 +92,7 @@ INVOICE_ROUTER_ERROR = None
 MONETICO_ROUTER_ERROR = None
 
 try:
-    from invoice_routes import router as invoice_router
+    from app.routers.payments.invoice_routes import router as invoice_router
     INVOICE_ROUTER_LOADED = True
     logging.info("✓ Invoice router loaded successfully")
 except Exception as e:
@@ -94,7 +102,7 @@ except Exception as e:
     invoice_router = None
 
 try:
-    from monetico_routes import router as monetico_router
+    from app.routers.payments.monetico_routes import router as monetico_router
     MONETICO_ROUTER_LOADED = True
     logging.info("✓ Monetico router loaded successfully")
 except Exception as e:
@@ -105,7 +113,7 @@ except Exception as e:
 
 PAYMENT_ROUTER_ERROR = None
 try:
-    from payment_routes import router as payment_router
+    from app.routers.payments.payment_routes import router as payment_router
     PAYMENT_ROUTER_LOADED = True
     logging.info("✓ Payment router loaded successfully")
 except Exception as e:
@@ -1142,14 +1150,14 @@ else:
 
 # New routers: Tasks and Client Portal
 try:
-    from tasks_routes import router as tasks_router
+    from app.routers.crm.tasks_routes import router as tasks_router
     app.include_router(tasks_router)
     logging.info("✓ Tasks router registered")
 except Exception as e:
     logging.error(f"✗ Failed to load tasks_routes: {e}")
 
 try:
-    from client_routes import router as client_router
+    from app.routers.payments.client_routes import router as client_router
     app.include_router(client_router)
     logging.info("✓ Client portal router registered")
 except Exception as e:
