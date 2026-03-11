@@ -217,9 +217,30 @@ async def get_article_related(slug: str):
         raise HTTPException(status_code=404, detail="Article not found")
 
     group_slug = article.get("group_slug")
+    article_lang = article.get("language", "fr")
+
     if not group_slug:
-        # No group set — return only the known language
-        return {"translations": {article.get("language", "fr"): slug}, "group_slug": None}
+        # No group_slug set — try to reconstruct siblings via translated_from linkage.
+        # Case 1: this article IS a translation (has translated_from pointing to a source slug).
+        # Case 2: this article IS a source (other articles have translated_from = this slug).
+        translations = {article_lang: slug}
+        source_slug = article.get("translated_from")
+        if source_slug:
+            # Find the source article + its other translations
+            siblings_cursor = db.blog_articles.find(
+                {"$or": [{"slug": source_slug}, {"translated_from": source_slug}], "published": True},
+                {"slug": 1, "language": 1, "_id": 0}
+            )
+        else:
+            # This may be the source — find articles translated from this slug
+            siblings_cursor = db.blog_articles.find(
+                {"translated_from": slug, "published": True},
+                {"slug": 1, "language": 1, "_id": 0}
+            )
+        siblings = await siblings_cursor.to_list(length=10)
+        for s in siblings:
+            translations[s["language"]] = s["slug"]
+        return {"translations": translations, "group_slug": None}
 
     cursor = db.blog_articles.find(
         {"group_slug": group_slug, "published": True},
