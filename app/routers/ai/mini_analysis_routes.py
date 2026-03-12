@@ -14,6 +14,9 @@ from pathlib import Path
 import google.genai as genai
 import traceback
 
+# Repo root — all data directories live here
+REPO_ROOT = Path(__file__).parent.parent.parent.parent
+
 # PDF generation
 try:
     from reportlab.lib.pagesizes import A4
@@ -43,7 +46,7 @@ try:
     # Register Hebrew font - NotoSansHebrew (downloaded during build) or DejaVuSans fallback
     try:
         # Try local font first (downloaded by download_fonts.sh)
-        ROOT_DIR = Path(__file__).parent
+        ROOT_DIR = REPO_ROOT
         font_paths = [
             str(ROOT_DIR / 'fonts' / 'NotoSansHebrew-Regular.ttf'),  # Local download
             '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Debian/Ubuntu
@@ -192,14 +195,14 @@ def get_db():
         db = mongo_client[db_name]
     return db
 
-# IGV internal data paths
-IGV_INTERNAL_DIR = Path(__file__).parent / 'igv_internal'
+# IGV internal data paths — at repo root
+IGV_INTERNAL_DIR = REPO_ROOT / 'igv_internal'
 TYPES_FILE = IGV_INTERNAL_DIR / 'IGV_Types_Emplacements_Activites.txt'
 WHITELIST_JEWISH = IGV_INTERNAL_DIR / 'Whitelist_1_Jewish_incl_Mixed.txt'
 WHITELIST_ARAB = IGV_INTERNAL_DIR / 'Whitelist_2_Arabe_incl_Mixed.txt'
 
-# Master Prompts directory
-PROMPTS_DIR = Path(__file__).parent / 'prompts'
+# Master Prompts directory — at repo root
+PROMPTS_DIR = REPO_ROOT / 'prompts'
 PROMPT_RESTAURATION = PROMPTS_DIR / 'MASTER_PROMPT_RESTAURATION.txt'
 PROMPT_RETAIL = PROMPTS_DIR / 'MASTER_PROMPT_RETAIL_NON_FOOD.txt'
 PROMPT_SERVICES = PROMPTS_DIR / 'MASTER_PROMPT_SERVICES_PARAMEDICAL.txt'
