@@ -296,9 +296,9 @@ def prepare_hebrew_text(text: str) -> str:
         return text
     
     try:
-        # Reshape characters then convert to visual RTL display order
-        reshaped_text = arabic_reshaper.reshape(text)
-        bidi_text = get_display(reshaped_text)
+        # Hebrew does NOT need arabic_reshaper (Arabic-only for contextual forms)
+        # get_display() alone correctly reverses logical→visual RTL order for Hebrew
+        bidi_text = get_display(text)
         return bidi_text
     except Exception as e:
         logging.warning(f"Hebrew BiDi conversion failed: {e}")
@@ -446,7 +446,7 @@ def generate_mini_analysis_pdf(brand_name: str, analysis_text: str, language: st
     content_buffer.close()
     
     # Merge with IGV header
-    header_path = os.path.join(os.path.dirname(__file__), 'assets', 'entete igv.pdf')
+    header_path = str(REPO_ROOT / 'assets' / 'entete igv.pdf')
     
     if os.path.exists(header_path):
         try:
