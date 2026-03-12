@@ -296,7 +296,7 @@ def prepare_hebrew_text(text: str) -> str:
         return text
     
     try:
-        # Hebrew does NOT need arabic_reshaper (Arabic-only for contextual forms)
+        # Hebrew does NOT use arabic_reshaper (it is for Arabic contextual forms only)
         # get_display() alone correctly reverses logical→visual RTL order for Hebrew
         bidi_text = get_display(text)
         return bidi_text
@@ -414,18 +414,14 @@ def generate_mini_analysis_pdf(brand_name: str, analysis_text: str, language: st
     paragraphs = analysis_text.split('\n\n')
     for para in paragraphs:
         if para.strip():
-            # Apply BiDi for Hebrew paragraphs - converts logical to visual order
-            display_para = prepare_hebrew_text(para) if language == "he" and BIDI_AVAILABLE else para
-            
-            if para.strip().startswith('-') or para.strip().startswith('•'):
-                lines = display_para.split('\n')
-                for line in lines:
-                    if line.strip():
-                        story.append(Paragraph(line.strip(), normal_style))
-                story.append(Spacer(1, 0.3*cm))
-            else:
-                story.append(Paragraph(display_para.strip(), normal_style))
-                story.append(Spacer(1, 0.5*cm))
+            # Process each line individually through BiDi (NOT whole block then split)
+            # Splitting after BiDi processing scrambles line order for RTL
+            lines = para.strip().split('\n')
+            for line in lines:
+                if line.strip():
+                    display_line = prepare_hebrew_text(line.strip()) if language == "he" and BIDI_AVAILABLE else line.strip()
+                    story.append(Paragraph(display_line, normal_style))
+            story.append(Spacer(1, 0.4*cm))
     
     # Footer
     story.append(Spacer(1, 1*cm))
