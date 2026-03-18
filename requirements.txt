@@ -43,7 +43,7 @@ passlib==1.7.4
 pathspec==0.12.1
 platformdirs==4.5.0
 pluggy==1.6.0
-pyasn1==0.6.2
+pyasn1==0.6.3
 pycodestyle==2.14.0
 pycparser==2.23
 pydantic==2.12.4
