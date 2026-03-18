@@ -98,7 +98,9 @@ async def global_search(
                     {"company": pattern}
                 ]
             }
-            # Contacts visible by commercial if linked
+            # FIX: apply same RBAC as leads — commercial only sees their own contacts
+            if user.get("role") == "commercial":
+                contact_query["owner_email"] = user.get("email")
             contacts = await db.contacts.find(contact_query).limit(limit).to_list(length=limit)
             for contact in contacts:
                 results["contacts"].append({

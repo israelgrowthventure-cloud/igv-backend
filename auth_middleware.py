@@ -63,6 +63,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         HTTPException 500: Database not configured
     """
     try:
+        if not JWT_SECRET:
+            raise HTTPException(status_code=500, detail="JWT_SECRET not configured")
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         
