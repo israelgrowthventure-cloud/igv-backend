@@ -24,10 +24,45 @@ try:
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from pathlib import Path
+
     PDF_AVAILABLE = True
+
+    # BiDi support for Hebrew/Arabic RTL text
+    try:
+        from bidi.algorithm import get_display
+        import arabic_reshaper
+        BIDI_AVAILABLE = True
+        logging.info("✅ BiDi support available for invoice PDFs")
+    except ImportError:
+        BIDI_AVAILABLE = False
+        logging.warning("⚠️ BiDi not available - Hebrew invoice PDFs may show incorrect text direction")
+
+    # Register Hebrew font (NotoSansHebrew downloaded during build)
+    _REPO_ROOT = Path(__file__).parent.parent.parent.parent
+    _FONT_PATHS = [
+        str(_REPO_ROOT / 'fonts' / 'NotoSansHebrew-Regular.ttf'),
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/TTF/DejaVuSans.ttf',
+    ]
+    HEBREW_FONT_NAME = 'Helvetica'  # fallback
+    for _fp in _FONT_PATHS:
+        if os.path.exists(_fp):
+            try:
+                pdfmetrics.registerFont(TTFont('InvoiceHebrewFont', _fp))
+                HEBREW_FONT_NAME = 'InvoiceHebrewFont'
+                logging.info(f"✅ Hebrew font registered for invoices: {_fp}")
+            except Exception as _e:
+                logging.warning(f"⚠️ Could not register Hebrew font {_fp}: {_e}")
+            break
+
 except ImportError:
     logging.warning("reportlab not available - PDF generation will fail")
     PDF_AVAILABLE = False
+    BIDI_AVAILABLE = False
+    HEBREW_FONT_NAME = 'Helvetica'
 
 # Email
 try:
@@ -81,6 +116,20 @@ COMPANY_NAME = "Israel Growth Venture"
 COMPANY_ADDRESS = "Tel Aviv, Israel"
 COMPANY_EMAIL = "israel.growth.venture@gmail.com"
 COMPANY_WEBSITE = "israelgrowthventure.com"
+
+
+def _rtl(text: str) -> str:
+    """
+    Apply BiDi + arabic-reshaper for correct Hebrew/Arabic display in ReportLab PDFs.
+    Falls back to original text if BiDi is not available.
+    """
+    if not BIDI_AVAILABLE:
+        return text
+    try:
+        reshaped = arabic_reshaper.reshape(text)
+        return get_display(reshaped)
+    except Exception:
+        return text
 
 
 # ==========================================
@@ -167,27 +216,35 @@ def generate_invoice_pdf(invoice_data: Dict[str, Any], language: str = "fr") -> 
     
     from io import BytesIO
     buffer = BytesIO()
-    
+
+    is_rtl = language == 'he'
+    body_font = HEBREW_FONT_NAME if is_rtl else 'Helvetica'
+    body_font_bold = HEBREW_FONT_NAME if is_rtl else 'Helvetica-Bold'
+    text_align = TA_RIGHT if is_rtl else TA_LEFT
+
     # Create PDF
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
     story = []
     styles = getSampleStyleSheet()
-    
+
     # Custom styles
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
+        fontName=body_font,
         fontSize=24,
         textColor=colors.HexColor('#1e40af'),
         spaceAfter=30,
         alignment=TA_CENTER
     )
-    
+
     header_style = ParagraphStyle(
         'Header',
         parent=styles['Normal'],
+        fontName=body_font,
         fontSize=10,
-        textColor=colors.HexColor('#4b5563')
+        textColor=colors.HexColor('#4b5563'),
+        alignment=text_align
     )
     
     # Header: Company Info
@@ -196,65 +253,84 @@ def generate_invoice_pdf(invoice_data: Dict[str, Any], language: str = "fr") -> 
     story.append(Spacer(1, 1*cm))
     
     # Invoice title
-    invoice_title = {
+    invoice_title_raw = {
         "fr": "FACTURE",
         "en": "INVOICE",
         "he": "חשבונית"
     }.get(language, "FACTURE")
-    
-    story.append(Paragraph(f"<b>{invoice_title} {invoice_data['invoice_number']}</b>", styles['Heading2']))
+    invoice_title = _rtl(invoice_title_raw) if is_rtl else invoice_title_raw
+
+    heading2_style = ParagraphStyle(
+        'CustomHeading2',
+        parent=styles['Heading2'],
+        fontName=body_font_bold,
+        alignment=text_align
+    )
+    story.append(Paragraph(f"{invoice_title} {invoice_data['invoice_number']}", heading2_style))
     story.append(Spacer(1, 0.5*cm))
     
+    def _t(text: str) -> str:
+        """Apply RTL transform for Hebrew, passthrough otherwise."""
+        return _rtl(text) if is_rtl else text
+
+    normal_style = ParagraphStyle(
+        'InvoiceNormal',
+        parent=styles['Normal'],
+        fontName=body_font,
+        alignment=text_align
+    )
+
     # Invoice details table
     invoice_info = [
-        [{
+        [_t({
             "fr": "Date:",
             "en": "Date:",
             "he": "תאריך:"
-        }.get(language, "Date:"), datetime.fromisoformat(invoice_data['invoice_date'].replace('Z', '+00:00')).strftime("%d/%m/%Y")],
-        [{
+        }.get(language, "Date:")), datetime.fromisoformat(invoice_data['invoice_date'].replace('Z', '+00:00')).strftime("%d/%m/%Y")],
+        [_t({
             "fr": "Échéance:",
             "en": "Due date:",
             "he": "תאריך יעד:"
-        }.get(language, "Échéance:"), datetime.fromisoformat(invoice_data['due_date'].replace('Z', '+00:00')).strftime("%d/%m/%Y") if invoice_data.get('due_date') else "-"],
+        }.get(language, "Échéance:")), datetime.fromisoformat(invoice_data['due_date'].replace('Z', '+00:00')).strftime("%d/%m/%Y") if invoice_data.get('due_date') else "-"],
     ]
-    
+
     info_table = Table(invoice_info, colWidths=[4*cm, 6*cm])
     info_table.setStyle(TableStyle([
-        ('FONT', (0, 0), (-1, -1), 'Helvetica', 9),
-        ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 9),
+        ('FONT', (0, 0), (-1, -1), body_font, 9),
+        ('FONT', (0, 0), (0, -1), body_font_bold, 9),
         ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
         ('ALIGN', (1, 0), (1, -1), 'LEFT'),
     ]))
     story.append(info_table)
     story.append(Spacer(1, 1*cm))
-    
+
     # Client info
-    story.append(Paragraph({
-        "fr": "<b>Facturé à:</b>",
-        "en": "<b>Billed to:</b>",
-        "he": "<b>לתשומת לב:</b>"
-    }.get(language, "<b>Facturé à:</b>"), styles['Normal']))
-    story.append(Paragraph(invoice_data['client_name'], styles['Normal']))
+    story.append(Paragraph(_t({
+        "fr": "Facturé à :",
+        "en": "Billed to:",
+        "he": "לתשומת לב:"
+    }.get(language, "Facturé à :")), normal_style))
+    story.append(Paragraph(_t(invoice_data['client_name']), normal_style))
     if invoice_data.get('client_company'):
-        story.append(Paragraph(invoice_data['client_company'], styles['Normal']))
+        story.append(Paragraph(_t(invoice_data['client_company']), normal_style))
     if invoice_data.get('client_email'):
-        story.append(Paragraph(invoice_data['client_email'], styles['Normal']))
+        story.append(Paragraph(invoice_data['client_email'], normal_style))
     story.append(Spacer(1, 1*cm))
-    
+
     # Items table
-    items_header = {
+    raw_items_header = {
         "fr": ["Description", "Qté", "Prix unitaire", "Remise", "HT", "TVA (18%)", "Total TTC"],
         "en": ["Description", "Qty", "Unit price", "Discount", "Subtotal", "VAT (18%)", "Total"],
-        "he": ["תיאור", "כמות", "מחיר יחידה", "הנחה", "סכום ביניים", "מע\"מ (18%)", "סה\"כ"]
+        "he": ["תיאור", "כמות", "מחיר יחידה", "הנחה", "סכום ביניים", 'מע"מ (18%)', "סה\"כ"]
     }.get(language, ["Description", "Qté", "Prix unitaire", "Remise", "HT", "TVA (18%)", "Total TTC"])
-    
+    items_header = [_t(h) for h in raw_items_header]
+
     items_data = [items_header]
-    
+
     for item in invoice_data['items']:
         discount_text = f"{item.get('discount_percent', 0)}%" if item.get('discount_percent', 0) > 0 else "-"
         items_data.append([
-            item['description'],
+            _t(item['description']),
             str(item['quantity']),
             f"{item['unit_price']} {invoice_data['currency']}",
             discount_text,
@@ -262,58 +338,60 @@ def generate_invoice_pdf(invoice_data: Dict[str, Any], language: str = "fr") -> 
             f"{item.get('tax_amount', 0):.2f}",
             f"{item.get('total', 0):.2f}"
         ])
-    
+
     items_table = Table(items_data, colWidths=[6*cm, 1.5*cm, 2.5*cm, 1.5*cm, 2*cm, 2*cm, 2*cm])
     items_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e40af')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 0), (-1, 0), body_font_bold),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('BACKGROUND', (0, 1), (-1, -1), colors.white),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTNAME', (0, 1), (-1, -1), body_font),
         ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
-        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT' if not is_rtl else 'RIGHT'),
     ]))
     story.append(items_table)
     story.append(Spacer(1, 1*cm))
-    
+
     # Totals
-    totals_label = {
+    raw_totals_label = {
         "fr": ["Sous-total HT:", "TVA (18%):", "Total TTC:"],
         "en": ["Subtotal:", "VAT (18%):", "Total:"],
-        "he": ["סכום ביניים:", "מע\"מ (18%):", "סה\"כ:"]
+        "he": ["סכום ביניים:", 'מע"מ (18%):', "סה\"כ:"]
     }.get(language, ["Sous-total HT:", "TVA (18%):", "Total TTC:"])
-    
+    totals_label = [_t(l) for l in raw_totals_label]
+
     totals_data = [
         [totals_label[0], f"{invoice_data['subtotal']:.2f} {invoice_data['currency']}"],
         [totals_label[1], f"{invoice_data['tax_amount']:.2f} {invoice_data['currency']}"],
-        [totals_label[2], f"<b>{invoice_data['total_amount']:.2f} {invoice_data['currency']}</b>"],
+        [totals_label[2], f"{invoice_data['total_amount']:.2f} {invoice_data['currency']}"],
     ]
-    
+
     totals_table = Table(totals_data, colWidths=[12*cm, 4*cm])
     totals_table.setStyle(TableStyle([
         ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
-        ('FONT', (0, -1), (-1, -1), 'Helvetica-Bold', 12),
+        ('FONT', (0, 0), (-1, -1), body_font, 10),
+        ('FONT', (0, -1), (-1, -1), body_font_bold, 12),
         ('LINEABOVE', (0, -1), (-1, -1), 1, colors.black),
     ]))
     story.append(totals_table)
     story.append(Spacer(1, 1*cm))
-    
+
     # Notes
     if invoice_data.get('notes'):
-        story.append(Paragraph({
-            "fr": "<b>Notes:</b>",
-            "en": "<b>Notes:</b>",
-            "he": "<b>הערות:</b>"
-        }.get(language, "<b>Notes:</b>"), styles['Normal']))
-        story.append(Paragraph(invoice_data['notes'], styles['Normal']))
+        notes_label = _t({
+            "fr": "Notes :",
+            "en": "Notes:",
+            "he": "הערות:"
+        }.get(language, "Notes :"))
+        story.append(Paragraph(notes_label, normal_style))
+        story.append(Paragraph(_t(invoice_data['notes']), normal_style))
     
     # Build PDF
     doc.build(story)
