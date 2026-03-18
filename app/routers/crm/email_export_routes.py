@@ -16,9 +16,13 @@ import io
 import uuid
 import base64
 
+import os
 from auth_middleware import get_current_user, require_admin, get_db
 
 logger = logging.getLogger(__name__)
+
+# FIX: use env var — fallback to prod URL only if not set
+_BACKEND_URL = os.getenv('RENDER_EXTERNAL_URL') or os.getenv('BACKEND_URL', 'https://igv-cms-backend.onrender.com')
 
 router = APIRouter(prefix="/api/crm", tags=["emails-exports"])
 
@@ -69,16 +73,15 @@ async def send_email_advanced(
         
         # Insert tracking pixel if enabled
         if track_opens:
-            tracking_pixel = f'<img src="https://igv-cms-backend.onrender.com/api/crm/emails/track/{tracking_id}/open" width="1" height="1" style="display:none" />'
+            tracking_pixel = f'<img src="{_BACKEND_URL}/api/crm/emails/track/{tracking_id}/open" width="1" height="1" style="display:none" />'
             body = body + tracking_pixel
-        
+
         # Replace links with tracked versions if enabled
         if track_clicks:
-            # Simple link tracking - in production use proper HTML parsing
             import re
             def replace_link(match):
                 original_url = match.group(1)
-                tracked_url = f"https://igv-cms-backend.onrender.com/api/crm/emails/track/{tracking_id}/click?url={original_url}"
+                tracked_url = f"{_BACKEND_URL}/api/crm/emails/track/{tracking_id}/click?url={original_url}"
                 return f'href="{tracked_url}"'
             body = re.sub(r'href="([^"]+)"', replace_link, body)
         

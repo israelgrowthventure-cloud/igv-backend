@@ -1355,3 +1355,48 @@ async def create_default_admin_if_not_exists():
 async def shutdown_db_client():
     if client:
         client.close()
+
+
+# ============================================================
+# KEEP-ALIVE — évite le cold start sur plan Render Free/Starter
+# Pinge /health toutes les 14 minutes en tâche de fond.
+# ============================================================
+
+import asyncio as _asyncio
+
+_keepalive_task: _asyncio.Task = None
+
+async def _keepalive_loop():
+    """Ping /health toutes les 14 min pour maintenir le service éveillé."""
+    SELF_URL = os.getenv('RENDER_EXTERNAL_URL', '')
+    if not SELF_URL:
+        # Render injecte RENDER_EXTERNAL_URL automatiquement
+        logging.info("ℹ️  RENDER_EXTERNAL_URL absent — keep-alive désactivé (dev local)")
+        return
+
+    ping_url = f"{SELF_URL.rstrip('/')}/health"
+    interval = 14 * 60  # 14 minutes
+
+    await _asyncio.sleep(60)  # Délai initial — laisse le serveur démarrer complètement
+
+    async with httpx.AsyncClient(timeout=10) as hc:
+        while True:
+            try:
+                resp = await hc.get(ping_url)
+                logging.debug(f"🏓 Keep-alive ping → {resp.status_code}")
+            except Exception as exc:
+                logging.warning(f"⚠️  Keep-alive ping failed: {exc}")
+            await _asyncio.sleep(interval)
+
+
+@app.on_event("startup")
+async def start_keepalive():
+    global _keepalive_task
+    _keepalive_task = _asyncio.create_task(_keepalive_loop())
+
+
+@app.on_event("shutdown")
+async def stop_keepalive():
+    global _keepalive_task
+    if _keepalive_task and not _keepalive_task.done():
+        _keepalive_task.cancel()
