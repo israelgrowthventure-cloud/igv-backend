@@ -530,25 +530,35 @@ async def delete_media(
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
-    
+
     if user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Only admins can delete media")
-    
+
+    # Security: reject path traversal attempts
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Security: resolve and verify the path stays within MEDIA_UPLOAD_DIR
+    from pathlib import Path
+    media_dir = Path(MEDIA_UPLOAD_DIR).resolve()
+    requested_path = (media_dir / filename).resolve()
+    if not str(requested_path).startswith(str(media_dir) + os.sep) and requested_path != media_dir:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
     # Find the file record
     media_doc = await db.media_library.find_one({"filename": filename})
     if not media_doc:
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     # Delete from filesystem
-    file_path = os.path.join(MEDIA_UPLOAD_DIR, filename)
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    
+    if requested_path.exists():
+        requested_path.unlink()
+
     # Delete from database
     await db.media_library.delete_one({"filename": filename})
-    
+
     logging.info(f"Media: {user['email']} deleted {filename}")
-    
+
     return {"success": True, "message": "File deleted successfully"}
 
 # ==========================================
@@ -606,9 +616,10 @@ async def forgot_password(request: ForgotPasswordRequest):
         upsert=True
     )
     
-    # Build reset URL
-    frontend_url = os.getenv('FRONTEND_URL', 'https://israelgrowthventure.com')
-    reset_url = f"{frontend_url}/reset-password?token={reset_token}&email={request.email}"
+    # Build reset URL with proper URL encoding (prevent parameter injection)
+    from urllib.parse import urlencode
+    frontend_url = os.getenv('FRONTEND_URL', 'https://israelgrowthventure.com').rstrip('/')
+    reset_url = f"{frontend_url}/reset-password?{urlencode({'token': reset_token, 'email': request.email})}"
     
     # TODO: Send email with reset URL
     # For now, log the reset URL (in production, send actual email)

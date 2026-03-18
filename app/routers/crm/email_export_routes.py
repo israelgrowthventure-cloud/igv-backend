@@ -176,8 +176,25 @@ async def track_email_click(
     url: str = Query(...)
 ):
     """
-    Track email link click and redirect
+    Track email link click and redirect (with open-redirect protection).
     """
+    from urllib.parse import urlparse
+    from fastapi.responses import RedirectResponse
+
+    # Security: only redirect to allowed domains (prevent open redirect)
+    ALLOWED_DOMAINS = {
+        'israelgrowthventure.com',
+        'www.israelgrowthventure.com',
+    }
+    FALLBACK_URL = 'https://israelgrowthventure.com'
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https') or parsed.netloc not in ALLOWED_DOMAINS:
+        logger.warning(f"Open redirect blocked: {url}")
+        safe_url = FALLBACK_URL
+    else:
+        safe_url = url
+
     db = get_db()
     if db is not None:
         try:
@@ -186,7 +203,7 @@ async def track_email_click(
                 {
                     "$push": {
                         "clicks": {
-                            "url": url,
+                            "url": safe_url,
                             "timestamp": datetime.now(timezone.utc)
                         }
                     },
@@ -195,10 +212,8 @@ async def track_email_click(
             )
         except Exception as e:
             logger.error(f"Error tracking click: {e}")
-    
-    # Redirect to original URL
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=url)
+
+    return RedirectResponse(url=safe_url)
 
 
 @router.get("/emails/{email_id}/stats")
