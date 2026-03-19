@@ -409,6 +409,59 @@ async def get_leads(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/leads/overdue-actions")
+async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)):
+    """Get leads with overdue next actions — static route must come before /leads/{lead_id}"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        user_filter = get_user_assigned_filter(user)
+        now = datetime.now(timezone.utc)
+        overdue_filter = {
+            **user_filter,
+            "next_action_date": {"$lt": now},
+            "status": {"$nin": ["converted", "lost"]}
+        }
+        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(100)
+        leads = await leads_cursor.to_list(100)
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        return {"success": True, "leads": leads, "data": leads, "total": len(leads)}
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error getting overdue actions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/leads/missing-next-action")
+async def get_leads_missing_next_action_early(user: Dict = Depends(get_current_user)):
+    """Get leads without next action defined — static route must come before /leads/{lead_id}"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        user_filter = get_user_assigned_filter(user)
+        missing_filter = {
+            **user_filter,
+            "$or": [
+                {"next_action": {"$exists": False}},
+                {"next_action": None},
+                {"next_action": ""}
+            ],
+            "status": {"$nin": ["converted", "lost"]}
+        }
+        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(100)
+        leads = await leads_cursor.to_list(100)
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        return {"success": True, "leads": leads, "data": leads, "total": len(leads)}
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error getting missing next actions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/leads/{lead_id}")
 async def get_lead_detail(lead_id: str, user: Dict = Depends(get_current_user)):
     """Get single lead by ID"""
@@ -1312,80 +1365,6 @@ async def update_pack_rappel_status(
 
 
 # ==========================================
-# LEADS - ADVANCED QUERIES (overdue, missing actions)
-# ==========================================
-
-@router.get("/leads/overdue-actions")
-async def get_leads_overdue_actions(user: Dict = Depends(get_current_user)):
-    """Get leads with overdue next actions"""
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # Get user filter for RBAC
-        user_filter = get_user_assigned_filter(user)
-        
-        # Find leads with overdue actions
-        now = datetime.now(timezone.utc)
-        overdue_filter = {
-            **user_filter,
-            "next_action_date": {"$lt": now},
-            "status": {"$nin": ["converted", "lost"]}
-        }
-        
-        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(100)
-        leads = await leads_cursor.to_list(100)
-        
-        # Format leads
-        for lead in leads:
-            lead["_id"] = str(lead["_id"])
-            lead["id"] = lead["_id"]
-        
-        return {"success": True, "data": leads, "total": len(leads)}
-        
-    except Exception as e:
-        logging.error(f"[CRM Leads] Error getting overdue actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/leads/missing-next-action")
-async def get_leads_missing_next_action(user: Dict = Depends(get_current_user)):
-    """Get leads without next action defined"""
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # Get user filter for RBAC
-        user_filter = get_user_assigned_filter(user)
-        
-        # Find leads without next action
-        missing_filter = {
-            **user_filter,
-            "$or": [
-                {"next_action": {"$exists": False}},
-                {"next_action": None},
-                {"next_action": ""}
-            ],
-            "status": {"$nin": ["converted", "lost"]}
-        }
-        
-        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(100)
-        leads = await leads_cursor.to_list(100)
-        
-        # Format leads
-        for lead in leads:
-            lead["_id"] = str(lead["_id"])
-            lead["id"] = lead["_id"]
-        
-        return {"success": True, "data": leads, "total": len(leads)}
-        
-    except Exception as e:
-        logging.error(f"[CRM Leads] Error getting missing next actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.put("/leads/{lead_id}/next-action")
 async def update_lead_next_action(lead_id: str, data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
     """Update lead next action and date"""
@@ -2289,5 +2268,212 @@ async def assign_lead(lead_id: str, assign_data: dict, user: Dict = Depends(get_
         raise
     except Exception as e:
         logging.error(f"Error assigning lead: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ACTIVITIES CRUD (create, update, delete)
+# ==========================================
+
+@router.post("/activities")
+async def create_activity(activity_data: dict, user: Dict = Depends(get_current_user)):
+    """Create a new CRM activity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        new_activity = {
+            **activity_data,
+            "created_by": user["email"],
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "status": activity_data.get("status", "pending"),
+        }
+        result = await current_db.crm_activities.insert_one(new_activity)
+        new_activity["_id"] = str(result.inserted_id)
+        new_activity["id"] = new_activity["_id"]
+        return {"success": True, "activity": new_activity, "id": new_activity["_id"]}
+    except Exception as e:
+        logging.error(f"Error creating activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/activities/{activity_id}")
+async def update_activity(activity_id: str, update_data: dict, user: Dict = Depends(get_current_user)):
+    """Update an existing CRM activity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        update_data.pop("_id", None)
+        update_data["updated_at"] = datetime.now(timezone.utc)
+        result = await current_db.crm_activities.update_one(
+            {"_id": ObjectId(activity_id)},
+            {"$set": update_data}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        return {"success": True, "message": "Activity updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error updating activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/activities/{activity_id}")
+async def delete_activity(activity_id: str, user: Dict = Depends(get_current_user)):
+    """Delete a CRM activity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        result = await current_db.crm_activities.delete_one({"_id": ObjectId(activity_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        return {"success": True, "message": "Activity deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# CONTACTS - ACTIVITIES & EMAILS
+# ==========================================
+
+@router.get("/contacts/{contact_id}/activities")
+async def get_contact_activities(contact_id: str, user: Dict = Depends(get_current_user)):
+    """Get all activities for a specific contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        activities = await current_db.crm_activities.find(
+            {"contact_id": contact_id}
+        ).sort("created_at", -1).to_list(100)
+        for act in activities:
+            act["_id"] = str(act["_id"])
+            act["id"] = act["_id"]
+        return {"activities": activities, "total": len(activities)}
+    except Exception as e:
+        logging.error(f"Error fetching contact activities: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/contacts/{contact_id}/emails")
+async def get_contact_emails(contact_id: str, user: Dict = Depends(get_current_user)):
+    """Get all emails for a specific contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        # Get contact to find email address
+        contact = await current_db.contacts.find_one({"_id": ObjectId(contact_id)})
+        query = {"contact_id": contact_id}
+        if contact and contact.get("email"):
+            query = {"$or": [{"contact_id": contact_id}, {"recipient_email": contact["email"]}]}
+
+        emails = await current_db.email_history.find(query).sort("sent_at", -1).to_list(100)
+        for email in emails:
+            email["_id"] = str(email["_id"])
+            email["id"] = email["_id"]
+        return {"emails": emails, "total": len(emails)}
+    except Exception as e:
+        logging.error(f"Error fetching contact emails: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# OPPORTUNITIES - NOTES & ACTIVITIES
+# ==========================================
+
+@router.get("/opportunities/{opp_id}/notes")
+async def get_opportunity_notes(opp_id: str, user: Dict = Depends(get_current_user)):
+    """Get notes for an opportunity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        notes = await current_db.notes.find(
+            {"opportunity_id": opp_id}
+        ).sort("created_at", -1).to_list(100)
+        for note in notes:
+            note["_id"] = str(note["_id"])
+            note["id"] = note["_id"]
+        return {"notes": notes, "total": len(notes)}
+    except Exception as e:
+        logging.error(f"Error fetching opportunity notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/opportunities/{opp_id}/notes")
+async def create_opportunity_note(opp_id: str, note_data: NoteCreate, user: Dict = Depends(get_current_user)):
+    """Add a note to an opportunity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        opp = await current_db.opportunities.find_one({"_id": ObjectId(opp_id)})
+        if not opp:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        new_note = {
+            "opportunity_id": opp_id,
+            "content": note_data.text,
+            "author": user["email"],
+            "created_by": user["email"],
+            "created_at": datetime.now(timezone.utc),
+        }
+        result = await current_db.notes.insert_one(new_note)
+        return {"message": "Note added", "note_id": str(result.inserted_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error creating opportunity note: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/opportunities/{opp_id}/activities")
+async def get_opportunity_activities(opp_id: str, user: Dict = Depends(get_current_user)):
+    """Get activities for an opportunity"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        activities = await current_db.crm_activities.find(
+            {"opportunity_id": opp_id}
+        ).sort("created_at", -1).to_list(100)
+        for act in activities:
+            act["_id"] = str(act["_id"])
+            act["id"] = act["_id"]
+        return {"activities": activities, "total": len(activities)}
+    except Exception as e:
+        logging.error(f"Error fetching opportunity activities: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# EMAILS - DELETE
+# ==========================================
+
+@router.delete("/emails/{email_id}")
+async def delete_email(email_id: str, user: Dict = Depends(get_current_user)):
+    """Delete an email from history"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        result = await current_db.email_history.delete_one({"_id": ObjectId(email_id)})
+        if result.deleted_count == 0:
+            # Try crm_activities collection as fallback
+            result2 = await current_db.crm_activities.delete_one({"_id": ObjectId(email_id)})
+            if result2.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Email not found")
+        return {"success": True, "message": "Email deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting email: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
