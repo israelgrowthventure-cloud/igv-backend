@@ -251,9 +251,11 @@ async def delete_user(user_id: str, user: Dict = Depends(require_admin)):
                 pass  # Not a valid ObjectId, skip
         
         if not existing_user:
-            # Try 3: Search by email (fallback - in case GET returns something else)
-            # This shouldn't be needed but we're being defensive
-            logging.error(f"User not found with id={user_id}")
+            # Try 3: Search by email (SettingsPage.js passes email as identifier)
+            existing_user = await current_db.crm_users.find_one({"email": user_id})
+
+        if not existing_user:
+            logging.error(f"User not found with id/email={user_id}")
             raise HTTPException(status_code=404, detail="User not found")
         
         # Prevent self-deletion

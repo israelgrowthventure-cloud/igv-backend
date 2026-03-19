@@ -1782,8 +1782,8 @@ async def get_user_audit_logs(email: str, user: Dict = Depends(get_current_user)
 # ==========================================
 
 @router.get("/settings/users")
-async def get_crm_users(user: Dict = Depends(get_current_user)):
-    """Get all CRM users (already exists, keeping for consistency)"""
+async def get_crm_users(user: Dict = Depends(require_admin)):
+    """Get all CRM users — admin only"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
