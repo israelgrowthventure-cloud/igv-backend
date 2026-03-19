@@ -409,6 +409,59 @@ async def get_leads(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/leads/overdue-actions")
+async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)):
+    """Get leads with overdue next actions — static route must come before /leads/{lead_id}"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        user_filter = get_user_assigned_filter(user)
+        now = datetime.now(timezone.utc)
+        overdue_filter = {
+            **user_filter,
+            "next_action_date": {"$lt": now},
+            "status": {"$nin": ["converted", "lost"]}
+        }
+        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(100)
+        leads = await leads_cursor.to_list(100)
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        return {"success": True, "leads": leads, "data": leads, "total": len(leads)}
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error getting overdue actions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/leads/missing-next-action")
+async def get_leads_missing_next_action_early(user: Dict = Depends(get_current_user)):
+    """Get leads without next action defined — static route must come before /leads/{lead_id}"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        user_filter = get_user_assigned_filter(user)
+        missing_filter = {
+            **user_filter,
+            "$or": [
+                {"next_action": {"$exists": False}},
+                {"next_action": None},
+                {"next_action": ""}
+            ],
+            "status": {"$nin": ["converted", "lost"]}
+        }
+        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(100)
+        leads = await leads_cursor.to_list(100)
+        for lead in leads:
+            lead["_id"] = str(lead["_id"])
+            lead["id"] = lead["_id"]
+        return {"success": True, "leads": leads, "data": leads, "total": len(leads)}
+    except Exception as e:
+        logging.error(f"[CRM Leads] Error getting missing next actions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/leads/{lead_id}")
 async def get_lead_detail(lead_id: str, user: Dict = Depends(get_current_user)):
     """Get single lead by ID"""
@@ -1312,80 +1365,6 @@ async def update_pack_rappel_status(
 
 
 # ==========================================
-# LEADS - ADVANCED QUERIES (overdue, missing actions)
-# ==========================================
-
-@router.get("/leads/overdue-actions")
-async def get_leads_overdue_actions(user: Dict = Depends(get_current_user)):
-    """Get leads with overdue next actions"""
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # Get user filter for RBAC
-        user_filter = get_user_assigned_filter(user)
-        
-        # Find leads with overdue actions
-        now = datetime.now(timezone.utc)
-        overdue_filter = {
-            **user_filter,
-            "next_action_date": {"$lt": now},
-            "status": {"$nin": ["converted", "lost"]}
-        }
-        
-        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(100)
-        leads = await leads_cursor.to_list(100)
-        
-        # Format leads
-        for lead in leads:
-            lead["_id"] = str(lead["_id"])
-            lead["id"] = lead["_id"]
-        
-        return {"success": True, "data": leads, "total": len(leads)}
-        
-    except Exception as e:
-        logging.error(f"[CRM Leads] Error getting overdue actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/leads/missing-next-action")
-async def get_leads_missing_next_action(user: Dict = Depends(get_current_user)):
-    """Get leads without next action defined"""
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # Get user filter for RBAC
-        user_filter = get_user_assigned_filter(user)
-        
-        # Find leads without next action
-        missing_filter = {
-            **user_filter,
-            "$or": [
-                {"next_action": {"$exists": False}},
-                {"next_action": None},
-                {"next_action": ""}
-            ],
-            "status": {"$nin": ["converted", "lost"]}
-        }
-        
-        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(100)
-        leads = await leads_cursor.to_list(100)
-        
-        # Format leads
-        for lead in leads:
-            lead["_id"] = str(lead["_id"])
-            lead["id"] = lead["_id"]
-        
-        return {"success": True, "data": leads, "total": len(leads)}
-        
-    except Exception as e:
-        logging.error(f"[CRM Leads] Error getting missing next actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.put("/leads/{lead_id}/next-action")
 async def update_lead_next_action(lead_id: str, data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
     """Update lead next action and date"""
