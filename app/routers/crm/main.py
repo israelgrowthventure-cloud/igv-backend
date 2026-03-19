@@ -753,7 +753,7 @@ async def get_lead_emails(
 @router.get("/opportunities")
 async def get_opportunities(
     page: int = Query(1, ge=1),
-    limit: int = Query(25, ge=1, le=100),
+    limit: int = Query(25, ge=1, le=500),
     stage: Optional[str] = None,
     user: Dict = Depends(get_current_user)
 ):
