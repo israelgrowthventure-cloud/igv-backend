@@ -1782,8 +1782,8 @@ async def get_user_audit_logs(email: str, user: Dict = Depends(get_current_user)
 # ==========================================
 
 @router.get("/settings/users")
-async def get_crm_users(user: Dict = Depends(get_current_user)):
-    """Get all CRM users (already exists, keeping for consistency)"""
+async def get_crm_users(user: Dict = Depends(require_admin)):
+    """Get all CRM users — admin only"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -2042,20 +2042,30 @@ async def update_opportunity_pipeline_stage(
 async def get_activities(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    type: Optional[str] = None,
+    search: Optional[str] = None,
     user: Dict = Depends(get_current_user)
 ):
-    """Get CRM activities with pagination"""
+    """Get CRM activities with pagination, optional type filter and search"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
-        activities = await current_db.crm_activities.find({}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-        total = await current_db.crm_activities.count_documents({})
-        
+        query = {}
+        if type:
+            query["type"] = type
+        if search:
+            query["$or"] = [
+                {"subject": {"$regex": search, "$options": "i"}},
+                {"notes": {"$regex": search, "$options": "i"}}
+            ]
+        activities = await current_db.crm_activities.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        total = await current_db.crm_activities.count_documents(query)
+
         for activity in activities:
             activity["_id"] = str(activity["_id"])
-        
-        return {"success": True, "data": activities, "total": total, "skip": skip, "limit": limit}
+
+        return {"success": True, "data": activities, "activities": activities, "total": total, "skip": skip, "limit": limit}
     except Exception as e:
         logging.error(f"Activities error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
