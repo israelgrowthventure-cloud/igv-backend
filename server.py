@@ -188,13 +188,25 @@ async def verify_mongodb_connection():
         return False
 
 # Create the main app without a prefix
-app = FastAPI()
+# Disable Swagger UI and ReDoc in production
+_is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
+app = FastAPI(
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
 
-# Debug endpoint to check router status
+# Debug endpoint to check router status — disabled in production
 @app.get("/debug/routers")
-async def debug_routers():
-    """Debug endpoint to check if routers are loaded"""
+async def debug_routers(request: Request):
+    """Debug endpoint — only accessible with BOOTSTRAP_TOKEN in production"""
     import sys
+    if _is_production:
+        bootstrap_token = os.getenv('BOOTSTRAP_TOKEN', '')
+        auth_header = request.headers.get('Authorization', '')
+        if not bootstrap_token or auth_header != f'Bearer {bootstrap_token}':
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
     return {
         "ai_router_loaded": 'ai_routes' in sys.modules,
         "mini_analysis_router_loaded": 'mini_analysis_routes' in sys.modules,
@@ -203,11 +215,8 @@ async def debug_routers():
         "monetico_router_loaded": MONETICO_ROUTER_LOADED,
         "monetico_router_error": MONETICO_ROUTER_ERROR,
         "gemini_api_key_set": bool(os.getenv('GEMINI_API_KEY')),
-        "gemini_api_key_length": len(os.getenv('GEMINI_API_KEY', '')),
         "mongodb_uri_set": bool(mongo_url),
-        "db_name": db_name,
         "mongodb_status": mongodb_status,
-        "build_timestamp": "2025-12-29T17:20:00Z"
     }
 
 # Ultra-light health check at root (no MongoDB dependency)
@@ -324,14 +333,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 api_router = APIRouter(prefix="/api")
 
 
-# Debug endpoint to see all headers
+# Debug endpoint to see all headers — disabled in production
 @api_router.get("/debug/headers")
 async def debug_headers(request: Request):
-    """Debug endpoint to see all request headers and IP detection"""
+    """Debug endpoint — only accessible with BOOTSTRAP_TOKEN in production"""
+    if _is_production:
+        bootstrap_token = os.getenv('BOOTSTRAP_TOKEN', '')
+        auth_header = request.headers.get('Authorization', '')
+        if not bootstrap_token or auth_header != f'Bearer {bootstrap_token}':
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
     return {
-        "headers": dict(request.headers),
-        "client_host": request.client.host if request.client else None,
-        "client_port": request.client.port if request.client else None,
         "x_forwarded_for": request.headers.get('X-Forwarded-For'),
         "x_real_ip": request.headers.get('X-Real-IP'),
         "cf_connecting_ip": request.headers.get('CF-Connecting-IP'),

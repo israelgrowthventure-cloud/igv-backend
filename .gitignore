@@ -29,7 +29,7 @@ pip-delete-this-directory.txt
 htmlcov/
 .coverage
 
-# Test credentials — never commit real passwords
+# Test credentials ï¿½ never commit real passwords
 .env.test.local
 
 
@@ -37,3 +37,22 @@ htmlcov/
 .env.test.local
 .env.local
 
+# All env variants
+.env.production
+.env.development
+.env.staging
+
+# Certificates and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# OAuth / service account credentials
+credentials.json
+service-account*.json
+google_oauth_token.json
+token.json
+client_secret*.json

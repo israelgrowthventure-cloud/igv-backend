@@ -56,13 +56,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "2️⃣  Authentication"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+ADMIN_EMAIL="${ADMIN_EMAIL:-postmaster@israelgrowthventure.com}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Error: ADMIN_PASSWORD environment variable is required}"
+
 echo -n "Testing admin login... "
 login_response=$(curl -s -X POST "$API_URL/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "postmaster@israelgrowthventure.com",
-    "password": "Admin@igv2025#"
-  }')
+  -d "{\"email\": \"$ADMIN_EMAIL\", \"password\": \"$ADMIN_PASSWORD\"}")
 
 TOKEN=$(echo "$login_response" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
 

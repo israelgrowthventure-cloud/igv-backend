@@ -71,9 +71,14 @@ Write-Host "---------------------------------------------------------------" -Fo
 
 Write-Host -NoNewline "Testing admin login... "
 
+$adminEmail = $env:ADMIN_EMAIL
+if (-not $adminEmail) { $adminEmail = "postmaster@israelgrowthventure.com" }
+$adminPassword = $env:ADMIN_PASSWORD
+if (-not $adminPassword) { throw "Error: ADMIN_PASSWORD environment variable is required" }
+
 $loginBody = @{
-    email = "postmaster@israelgrowthventure.com"
-    password = "Admin@igv2025#"
+    email = $adminEmail
+    password = $adminPassword
 } | ConvertTo-Json
 
 try {
