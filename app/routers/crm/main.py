@@ -7,7 +7,7 @@ CRITICAL: URLs and JSON response formats unchanged for frontend compatibility
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Body, Path, status
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict, Any
+from typing import Annotated, Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -463,7 +463,7 @@ async def get_leads_missing_next_action_early(user: Dict = Depends(get_current_u
 
 
 @router.get("/leads/{lead_id}")
-async def get_lead_detail(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), user: Dict = Depends(get_current_user)):
+async def get_lead_detail(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], user: Dict = Depends(get_current_user)):
     """Get single lead by ID"""
     current_db = get_db()
     if current_db is None:
@@ -550,7 +550,7 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
 
 
 @router.put("/leads/{lead_id}")
-async def update_lead(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), update_data: LeadUpdate, user: Dict = Depends(get_current_user)):
+async def update_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], update_data: LeadUpdate, user: Dict = Depends(get_current_user)):
     """Update lead (full update)"""
     current_db = get_db()
     if current_db is None:
@@ -595,13 +595,13 @@ async def update_lead(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), updat
 
 
 @router.patch("/leads/{lead_id}")
-async def patch_lead(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), update_data: LeadUpdate, user: Dict = Depends(get_current_user)):
+async def patch_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], update_data: LeadUpdate, user: Dict = Depends(get_current_user)):
     """PATCH lead (partial update) - from crm_additional_routes"""
     return await update_lead(lead_id, update_data, user)
 
 
 @router.delete("/leads/{lead_id}")
-async def delete_lead(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), user: Dict = Depends(require_admin)):
+async def delete_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], user: Dict = Depends(require_admin)):
     """Delete lead (admin only)"""
     current_db = get_db()
     if current_db is None:
@@ -635,7 +635,7 @@ async def delete_lead(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), user:
 
 @router.get("/leads/{lead_id}/activities")
 async def get_lead_activities(
-    lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"),
+    lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")],
     user: Dict = Depends(get_current_user),
     limit: int = Query(50, le=200)
 ):
@@ -705,7 +705,7 @@ async def get_lead_activities(
 
 @router.get("/leads/{lead_id}/emails")
 async def get_lead_emails(
-    lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"),
+    lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")],
     user: Dict = Depends(get_current_user),
     limit: int = Query(50, le=200)
 ):
@@ -1366,7 +1366,7 @@ async def update_pack_rappel_status(
 
 # ==========================================
 @router.put("/leads/{lead_id}/next-action")
-async def update_lead_next_action(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
+async def update_lead_next_action(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], data: Dict[str, Any] = Body(...), user: Dict = Depends(get_current_user)):
     """Update lead next action and date"""
     current_db = get_db()
     if current_db is None:
@@ -2094,7 +2094,7 @@ async def get_email_history(
 # ==========================================
 
 @router.get("/leads/{lead_id}/notes")
-async def get_lead_notes(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), user: Dict = Depends(get_current_user)):
+async def get_lead_notes(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], user: Dict = Depends(get_current_user)):
     """Get notes for a lead"""
     current_db = get_db()
     if current_db is None:
@@ -2120,7 +2120,7 @@ async def get_lead_notes(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), us
 
 
 @router.post("/leads/{lead_id}/notes")
-async def add_lead_note(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), note_data: NoteCreate, user: Dict = Depends(get_current_user)):
+async def add_lead_note(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], note_data: NoteCreate, user: Dict = Depends(get_current_user)):
     """Add a note to a lead"""
     current_db = get_db()
     if current_db is None:
@@ -2155,7 +2155,7 @@ async def add_lead_note(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), not
 # ==========================================
 
 @router.post("/leads/{lead_id}/convert-to-contact")
-async def convert_lead_to_contact(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), user: Dict = Depends(get_current_user)):
+async def convert_lead_to_contact(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], user: Dict = Depends(get_current_user)):
     """Convert a lead to a contact"""
     current_db = get_db()
     if current_db is None:
@@ -2237,7 +2237,7 @@ async def convert_lead_to_contact(lead_id: str = Path(..., pattern=r"^[a-f0-9]{2
 # ==========================================
 
 @router.post("/leads/{lead_id}/assign")
-async def assign_lead(lead_id: str = Path(..., pattern=r"^[a-f0-9]{24}$"), assign_data: dict, user: Dict = Depends(get_current_user)):
+async def assign_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], assign_data: dict, user: Dict = Depends(get_current_user)):
     """Assign a lead to a commercial"""
     current_db = get_db()
     if current_db is None:
