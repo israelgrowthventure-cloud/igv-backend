@@ -41,6 +41,7 @@ from app.routers.ai.quota_queue_routes import router as quota_router
 from app.routers.site.extended_routes import router as extended_router
 from app.routers.site.tracking_routes import router as tracking_router
 from app.routers.site.gdpr_routes import router as gdpr_router
+from app.routers.site.alyah_pro_routes import router as alyah_pro_router
 
 # ── Admin ──────────────────────────────────────────────────────
 from app.routers.admin.admin_routes import router as admin_router
@@ -1086,6 +1087,7 @@ app.include_router(api_router)
 app.include_router(ai_router)  # AI Insight generation
 app.include_router(mini_analysis_router)  # Mini-Analysis with Gemini
 app.include_router(extended_router)  # Extended features: PDF, Calendar, Contact Expert
+app.include_router(alyah_pro_router)  # Alyah Pro lead form — POST /api/leads/alyah-pro
 # ===== PHASE 2: CRM UNIFIED ROUTER (replaces old CRM routers) =====
 app.include_router(crm_unified_router)  # ALL CRM routes centralized in app/routers/crm/main.py
 # OLD CRM routers REMOVED: crm_complete_router, crm_additional_router (now in app/routers/crm/main.py)
