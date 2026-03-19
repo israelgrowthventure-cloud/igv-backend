@@ -105,56 +105,45 @@ async def get_mini_analysis_stats(
         else:
             start_date = now - timedelta(days=365)
         
-        # Count by status — ALL TIME (no date filter) for the dashboard cards
+        # Count by status
         pipeline = [
+            {"$match": {"created_at": {"$gte": start_date}}},
             {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
         ]
-
+        
         status_counts = {}
         async for doc in db.mini_analyses.aggregate(pipeline):
             status_counts[doc["_id"] or "pending"] = doc["count"]
-
+        
         # Also check leads with mini-analyse source
         leads_pipeline = [
             {"$match": {
-                "source": {"$regex": "mini.?analy", "$options": "i"}
+                "source": {"$regex": "mini.?analy", "$options": "i"},
+                "created_at": {"$gte": start_date}
             }},
             {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
         ]
-
+        
         async for doc in db.leads.aggregate(leads_pipeline):
             key = doc["_id"] or "pending"
             status_counts[key] = status_counts.get(key, 0) + doc["count"]
-
+        
         total = sum(status_counts.values())
-
-        # All-time total from mini_analyses collection + leads fallback
-        all_time_mini = await db.mini_analyses.count_documents({})
-        if all_time_mini == 0:
-            all_time_leads = await db.leads.count_documents(
-                {"source": {"$regex": "mini.?analy", "$options": "i"}}
-            )
-            total = all_time_leads
-        else:
-            total = all_time_mini
-
-        # Conversion rate (all time)
+        
+        # Conversion rate
         converted = await db.leads.count_documents({
             "source": {"$regex": "mini.?analy", "$options": "i"},
-            "status": "converted"
+            "status": "converted",
+            "created_at": {"$gte": start_date}
         })
-
+        
         conversion_rate = round((converted / total) * 100, 1) if total > 0 else 0
-
-        # Map workflow_status keys to frontend-expected keys
+        
         return {
-            "period": "all",
+            "period": period,
             "total": total,
-            "pending": status_counts.get("pending", 0),
-            "in_progress": status_counts.get("in_progress", 0) + status_counts.get("processing", 0),
-            "completed": status_counts.get("completed", 0),
-            "converted": status_counts.get("converted", 0) or converted,
             "by_status": status_counts,
+            "converted": converted,
             "conversion_rate": conversion_rate
         }
         
