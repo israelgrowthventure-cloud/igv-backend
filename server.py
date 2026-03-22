@@ -1220,6 +1220,8 @@ async def startup_db_init():
             await create_default_admin_if_not_exists()
             await upsert_about_pages(db)
             
+            # Migrate: replace old seeded articles with new alyah-franchise-entrepreneur article
+            await migrate_replace_old_blog_articles(db)
             # Migrate: set group_slug on blog articles so language switcher works
             await migrate_blog_group_slugs(db)
             
@@ -1231,6 +1233,160 @@ async def startup_db_init():
             logging.warning(f"Index creation skipped: {e}")
 
 
+async def migrate_replace_old_blog_articles(db_conn):
+    """
+    Idempotent migration: delete the 3 old seeded articles (FR/EN/HE × 3 topics)
+    and insert the new alyah-franchise-entrepreneur article if not already present.
+    Safe to run multiple times.
+    """
+    if db_conn is None:
+        return
+    from datetime import datetime, timezone
+
+    OLD_SLUGS = [
+        # FR
+        "ia-retail-israelien-2026",
+        "ouvrir-reseau-israel-guide",
+        "essor-food-courts-premium",
+        # EN
+        "ai-israeli-retail-2026",
+        "opening-network-israel-guide",
+        "rise-premium-food-courts",
+        # HE
+        "ai-retail-israel-2026-he",
+        "opening-network-israel-guide-he",
+        "rise-premium-food-courts-he",
+    ]
+
+    del_result = await db_conn.blog_articles.delete_many({"slug": {"$in": OLD_SLUGS}})
+    if del_result.deleted_count:
+        logging.info(f"✓ Blog migration: deleted {del_result.deleted_count} old seeded articles")
+
+    now = datetime.now(timezone.utc)
+    NEW_ARTICLES = [
+        {
+            "title": "Faire son Alyah en tant qu'entrepreneur-franchisé",
+            "slug": "alyah-franchise-entrepreneur",
+            "excerpt": "Vous avez quitté Paris pour Haïfa avec vos valises et votre projet de franchise. Voici les clés pour réussir votre implantation commerciale en Israël dès la première année.",
+            "content": (
+                "<h2>Du CDG-TLV à votre premier local commercial</h2>"
+                "<p>Chaque année, des centaines d'entrepreneurs francophones débarquent à l'aéroport Ben Gourion ou au port de Haïfa avec une idée claire : reproduire en Israël le modèle commercial qui a fait ses preuves en France. Réseau de restauration, concept retail, service à la personne... le rêve est là. La réalité, elle, demande une préparation sérieuse.</p>"
+                "<h3>1. Comprendre le marché israélien avant tout</h3>"
+                "<p>Israël n'est pas la France avec du soleil. Le consommateur israélien est exigeant, ultra-connecté et n'hésite pas à comparer les prix en temps réel. Votre concept doit être adapté, pas seulement traduit.</p>"
+                "<ul><li><strong>Le prix est roi</strong> mais la qualité prime</li>"
+                "<li><strong>La rapidité de service</strong> est non-négociable dans le retail alimentaire</li>"
+                "<li><strong>Le digital</strong> : les avis Google et Waze sont consultés avant chaque visite</li></ul>"
+                "<h3>2. Le statut d'Olé Hadach : vos avantages fiscaux</h3>"
+                "<p>En tant que nouvel immigrant (<em>Olé Hadach</em>), vous bénéficiez d'exemptions fiscales significatives pendant 10 ans sur vos revenus étrangers. Ces avantages sont un levier réel pour financer votre implantation initiale.</p>"
+                "<h3>3. Choisir la bonne ville d'implantation</h3>"
+                "<ul><li><strong>Tel Aviv</strong> : fort pouvoir d'achat, concurrence intense, loyers élevés</li>"
+                "<li><strong>Jérusalem</strong> : clientèle mixte, flux touristiques importants</li>"
+                "<li><strong>Haïfa</strong> : ville en mutation, loyers raisonnables, clientèle locale fidèle</li>"
+                "<li><strong>Périphérie</strong> : moins de concurrence, soutien gouvernemental, croissance démographique</li></ul>"
+                "<h3>4. L'accompagnement IGV : de l'idée au premier jour d'ouverture</h3>"
+                "<p>Notre mission est de transformer votre expérience française en succès israélien. De la validation du concept à la formation des équipes locales, nous gérons chaque étape à vos côtés.</p>"
+                "<blockquote><p>« Maintenant que tu es israélien, c'est ton tour de construire. »</p></blockquote>"
+                "<p><strong>Vous avez un concept ? Parlez-nous de votre projet dès aujourd'hui.</strong></p>"
+            ),
+            "category": "Alyah & Entrepreneuriat",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
+            "language": "fr",
+            "published": True,
+            "tags": ["Alyah", "Franchise", "Entrepreneur", "Olim", "Implantation"],
+            "author": "IGV Team",
+            "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now,
+        },
+        {
+            "title": "Making Aliyah as a Franchise Entrepreneur",
+            "slug": "aliyah-franchise-entrepreneur-guide",
+            "excerpt": "You left Paris for Haifa with your suitcase and your business idea. Here are the keys to successfully launching your franchise in Israel from day one.",
+            "content": (
+                "<h2>From CDG-TLV to Your First Commercial Space</h2>"
+                "<p>Every year, hundreds of French-speaking entrepreneurs arrive in Israel with a clear vision: to replicate the business model that worked in France. The dream is there. Reality requires serious preparation.</p>"
+                "<h3>1. Understanding the Israeli Market First</h3>"
+                "<p>Israel is not France with sunshine. Israeli consumers are demanding and hyper-connected. Your concept must be adapted, not just translated.</p>"
+                "<ul><li><strong>Price matters</strong> but quality comes first</li>"
+                "<li><strong>Speed of service</strong> is non-negotiable in food retail</li>"
+                "<li><strong>Digital presence</strong>: Google and Waze reviews are checked before every visit</li></ul>"
+                "<h3>2. Oleh Hadash Status: Your Tax Advantages</h3>"
+                "<p>As a new immigrant (<em>Oleh Hadash</em>), you benefit from significant tax exemptions for 10 years on foreign income — a real lever to finance your initial setup.</p>"
+                "<h3>3. Choosing the Right City</h3>"
+                "<ul><li><strong>Tel Aviv</strong>: high purchasing power, intense competition, high rents</li>"
+                "<li><strong>Jerusalem</strong>: mixed clientele, significant tourist traffic</li>"
+                "<li><strong>Haifa</strong>: city in transition, reasonable rents, loyal local customers</li>"
+                "<li><strong>Periphery</strong>: less competition, government support, demographic growth</li></ul>"
+                "<h3>4. IGV Support: From Idea to Opening Day</h3>"
+                "<p>Our mission is to turn your French experience into Israeli success. We manage every step alongside you.</p>"
+                "<blockquote><p>\"Now that you are Israeli, it's your turn to build.\"</p></blockquote>"
+                "<p><strong>Have a concept? Tell us about your project today.</strong></p>"
+            ),
+            "category": "Aliyah & Entrepreneurship",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
+            "language": "en",
+            "published": True,
+            "tags": ["Aliyah", "Franchise", "Entrepreneur", "Olim", "Business"],
+            "author": "IGV Team",
+            "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now,
+        },
+        {
+            "title": "לעלות לישראל כיזם-זכיין: המדריך המלא לעולים",
+            "slug": "alyah-franchise-entrepreneur-he",
+            "excerpt": "עזבתם את פריז לחיפה עם המזוודות והרעיון העסקי שלכם. הנה המפתחות להצליח בהקמת הזיכיון בישראל כבר מהשנה הראשונה.",
+            "content": (
+                "<h2>מ-CDG-TLV לחנות הראשונה שלכם</h2>"
+                "<p>מדי שנה עולים מאות יזמים דוברי צרפתית לישראל עם חזון ברור: לשחזר בישראל את המודל העסקי שעבד בצרפת. החלום שם. המציאות דורשת הכנה רצינית.</p>"
+                "<h3>1. להכיר את השוק הישראלי לפני הכל</h3>"
+                "<p>ישראל אינה צרפת עם שמש. הצרכן הישראלי תובעני ומחובר לרשת. הקונספט שלכם חייב להיות מותאם, לא רק מתורגם.</p>"
+                "<ul><li><strong>המחיר חשוב</strong> אך האיכות קובעת</li>"
+                "<li><strong>מהירות השירות</strong> אינה ניתנת למשא ומתן</li>"
+                "<li><strong>נוכחות דיגיטלית</strong>: חוות דעת ב-Google ו-Waze נקראות לפני כל ביקור</li></ul>"
+                "<h3>2. מעמד עולה חדש: היתרונות המיסויים שלכם</h3>"
+                "<p>כעולה חדש, אתם נהנים מפטורים ממס משמעותיים למשך 10 שנים על הכנסות זרות — מנוף אמיתי למימון ההקמה הראשונית.</p>"
+                "<h3>3. בחירת העיר הנכונה</h3>"
+                "<ul><li><strong>תל אביב</strong>: כוח קנייה גבוה, תחרות עזה, שכירות יקרה</li>"
+                "<li><strong>ירושלים</strong>: לקוחות מגוונים, תנועת תיירים משמעותית</li>"
+                "<li><strong>חיפה</strong>: עיר בשינוי, שכירות סבירה, לקוחות נאמנים</li>"
+                "<li><strong>פריפריה</strong>: פחות תחרות, תמיכה ממשלתית, צמיחה דמוגרפית</li></ul>"
+                "<h3>4. ליווי IGV: מהרעיון ליום הפתיחה</h3>"
+                "<p>המשימה שלנו היא להפוך את הניסיון הצרפתי שלכם להצלחה ישראלית. אנו מנהלים כל שלב לצידכם.</p>"
+                "<blockquote><p>« עכשיו אתה הישראלי. הגיע תורך לבנות. »</p></blockquote>"
+                "<p><strong>יש לכם קונספט? ספרו לנו על הפרויקט שלכם היום.</strong></p>"
+            ),
+            "category": "עלייה ויזמות",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
+            "language": "he",
+            "published": True,
+            "tags": ["עלייה", "זיכיון", "יזם", "עולים", "עסקים"],
+            "author": "צוות IGV",
+            "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now,
+        },
+    ]
+
+    inserted = 0
+    for article in NEW_ARTICLES:
+        exists = await db_conn.blog_articles.find_one({"slug": article["slug"]})
+        if not exists:
+            await db_conn.blog_articles.insert_one(article)
+            inserted += 1
+
+    if inserted:
+        logging.info(f"✓ Blog migration: inserted {inserted} new article(s) (alyah-franchise-entrepreneur)")
+    else:
+        logging.info("✓ Blog migration: alyah-franchise-entrepreneur already present")
+
+
 async def migrate_blog_group_slugs(db_conn):
     """
     Idempotent migration: sets group_slug on the seeded blog articles.
@@ -1240,12 +1396,8 @@ async def migrate_blog_group_slugs(db_conn):
     if db_conn is None:
         return
     GROUPS = [
-        ("retail-ia-israel-2026",
-         ["ia-retail-israelien-2026", "ai-israeli-retail-2026", "ai-retail-israel-2026-he"]),
-        ("opening-network-israel-guide",
-         ["ouvrir-reseau-israel-guide", "opening-network-israel-guide", "opening-network-israel-guide-he"]),
-        ("food-courts-premium",
-         ["essor-food-courts-premium", "rise-premium-food-courts", "rise-premium-food-courts-he"]),
+        ("alyah-franchise-entrepreneur",
+         ["alyah-franchise-entrepreneur", "aliyah-franchise-entrepreneur-guide", "alyah-franchise-entrepreneur-he"]),
     ]
     total = 0
     for group_slug, slugs in GROUPS:

@@ -358,12 +358,8 @@ async def admin_migrate_group_slugs(user: Dict = Depends(get_current_user)):
         raise HTTPException(status_code=503, detail="Database not configured")
 
     GROUPS = [
-        ("retail-ia-israel-2026",
-         ["ia-retail-israelien-2026", "ai-israeli-retail-2026", "ai-retail-israel-2026-he"]),
-        ("opening-network-israel-guide",
-         ["ouvrir-reseau-israel-guide", "opening-network-israel-guide", "opening-network-israel-guide-he"]),
-        ("food-courts-premium",
-         ["essor-food-courts-premium", "rise-premium-food-courts", "rise-premium-food-courts-he"]),
+        ("alyah-franchise-entrepreneur",
+         ["alyah-franchise-entrepreneur", "aliyah-franchise-entrepreneur-guide", "alyah-franchise-entrepreneur-he"]),
     ]
     total = 0
     for group_slug, slugs in GROUPS:
@@ -695,84 +691,50 @@ async def seed_sample_articles(user: Dict = Depends(get_current_user)):
     
     sample_articles = [
         {
-            "title": "L'IA dans le retail israélien en 2026",
-            "slug": "ia-retail-israelien-2026",
-            "excerpt": "Comment l'intelligence artificielle transforme l'expérience client dans les centres commerciaux de Tel Aviv.",
+            "title": "Faire son Alyah en tant qu'entrepreneur-franchisé",
+            "slug": "alyah-franchise-entrepreneur",
+            "excerpt": "Vous avez quitté Paris pour Haïfa avec vos valises et votre projet de franchise. Voici les clés pour réussir votre implantation commerciale en Israël dès la première année.",
             "content": """
-                <h2>L'Intelligence Artificielle Révolutionne le Commerce</h2>
-                <p>En 2026, les centres commerciaux israéliens sont à la pointe de l'innovation technologique. L'IA est désormais omniprésente dans l'expérience d'achat.</p>
-                <h3>Personnalisation en Temps Réel</h3>
-                <p>Les systèmes d'IA analysent les comportements d'achat pour proposer des recommandations personnalisées instantanément.</p>
-                <h3>Gestion des Stocks Intelligente</h3>
-                <p>Les algorithmes prédictifs permettent une gestion optimale des inventaires, réduisant le gaspillage de 40%.</p>
-            """,
-            "category": "Retail Tech",
-            "image_url": None,
-            "language": "fr",
-            "published": True,
-            "tags": ["IA", "Retail", "Innovation", "Tel Aviv"],
-            "author": "IGV Team",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "Ouvrir son réseau en Israël : Guide Complet",
-            "slug": "ouvrir-reseau-israel-guide",
-            "excerpt": "Les étapes clés pour réussir son implantation de franchise sur le marché local.",
-            "content": """
-                <h2>Réussir son Expansion en Israël</h2>
-                <p>Le marché israélien offre des opportunités uniques pour les franchises internationales. Voici les étapes essentielles.</p>
-                <h3>1. Étude de Marché</h3>
-                <p>Comprendre les spécificités culturelles et commerciales du marché local est primordial.</p>
-                <h3>2. Partenaire Local</h3>
-                <p>Trouver un master-franchisé local avec une connaissance approfondie du terrain.</p>
-                <h3>3. Adaptation du Concept</h3>
-                <p>Adapter votre offre aux goûts et attentes des consommateurs israéliens.</p>
-            """,
-            "category": "Expansion",
-            "image_url": None,
-            "language": "fr",
-            "published": True,
-            "tags": ["Franchise", "Expansion", "Business", "Guide"],
-            "author": "IGV Team",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "L'essor des Food Courts Premium",
-            "slug": "essor-food-courts-premium",
-            "excerpt": "Analyse du changement des habitudes de consommation post-2025.",
-            "content": """
-                <h2>La Révolution des Espaces de Restauration</h2>
-                <p>Les food courts traditionnels cèdent la place à des concepts premium offrant une expérience gastronomique raffinée.</p>
-                <h3>Tendances Observées</h3>
+                <h2>Du CDG-TLV à votre premier local commercial</h2>
+                <p>Chaque année, des centaines d'entrepreneurs francophones débarquent à l'aéroport Ben Gourion ou au port de Haïfa avec une idée claire : reproduire en Israël le modèle commercial qui a fait ses preuves en France. Réseau de restauration, concept retail, service à la personne... le rêve est là. La réalité, elle, demande une préparation sérieuse.</p>
+                <h3>1. Comprendre le marché israélien avant tout</h3>
+                <p>Israël n'est pas la France avec du soleil. Le consommateur israélien est exigeant, ultra-connecté et n'hésite pas à comparer les prix en temps réel. Il attend une expérience, pas seulement un produit. Votre concept doit être adapté, pas seulement traduit.</p>
                 <ul>
-                    <li>Montée en gamme des offres culinaires</li>
-                    <li>Design architectural soigné</li>
-                    <li>Focus sur les produits locaux et durables</li>
+                    <li><strong>Le prix est roi</strong> mais la qualité prime — le consommateur paiera plus pour ce qui vaut vraiment</li>
+                    <li><strong>La rapidité de service</strong> est non-négociable dans le retail alimentaire</li>
+                    <li><strong>Le digital</strong> : les avis Google et Waze sont consultés avant chaque visite</li>
                 </ul>
-                <h3>Opportunités pour les Franchises</h3>
-                <p>Cette évolution ouvre de nouvelles perspectives pour les concepts de restauration haut de gamme.</p>
+                <h3>2. Le statut d'Olé Hadach : vos avantages fiscaux</h3>
+                <p>En tant que nouvel immigrant (<em>Olé Hadach</em>), vous bénéficiez d'exemptions fiscales significatives pendant 10 ans sur vos revenus étrangers. Ces avantages sont un levier réel pour financer votre implantation initiale et réduire la pression sur votre trésorerie.</p>
+                <h3>3. Choisir la bonne ville d'implantation</h3>
+                <p>Tel Aviv, Jérusalem, Haïfa ou les nouvelles villes de périphérie ? Chaque marché a ses dynamiques :</p>
+                <ul>
+                    <li><strong>Tel Aviv</strong> : fort pouvoir d'achat, concurrence intense, loyers élevés</li>
+                    <li><strong>Jérusalem</strong> : clientèle mixte, flux touristiques importants</li>
+                    <li><strong>Haïfa</strong> : ville en mutation, loyers raisonnables, clientèle locale fidèle</li>
+                    <li><strong>Périphérie</strong> : moins de concurrence, soutien gouvernemental, croissance démographique</li>
+                </ul>
+                <h3>4. L'accompagnement IGV : de l'idée au premier jour d'ouverture</h3>
+                <p>Notre mission est de transformer votre expérience française en succès israélien. De la validation du concept à la formation des équipes locales, en passant par les démarches administratives, nous gérons chaque étape à vos côtés.</p>
+                <blockquote><p>« Maintenant que tu es israélien, c'est ton tour de construire. »</p></blockquote>
+                <p><strong>Vous avez un concept ? Parlez-nous de votre projet dès aujourd'hui.</strong></p>
             """,
-            "category": "Success Story",
-            "image_url": None,
+            "category": "Alyah & Entrepreneuriat",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
             "language": "fr",
             "published": True,
-            "tags": ["Food Court", "Restauration", "Tendances"],
+            "tags": ["Alyah", "Franchise", "Entrepreneur", "Olim", "Implantation"],
             "author": "IGV Team",
             "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
             "created_at": now,
             "updated_at": now,
             "published_at": now
         }
     ]
-    
+
     result = await db.blog_articles.insert_many(sample_articles)
-    
+
     return {
         "success": True,
         "message": f"{len(result.inserted_ids)} sample articles created",
@@ -1171,250 +1133,136 @@ async def seed_articles_all_languages(user: Dict = Depends(get_current_user)):
     articles = [
         # ============ FRENCH ============
         {
-            "title": "L'IA dans le retail israélien en 2026",
-            "slug": "ia-retail-israelien-2026",
-            "excerpt": "Comment l'intelligence artificielle transforme l'expérience client dans les centres commerciaux de Tel Aviv.",
+            "title": "Faire son Alyah en tant qu'entrepreneur-franchisé",
+            "slug": "alyah-franchise-entrepreneur",
+            "excerpt": "Vous avez quitté Paris pour Haïfa avec vos valises et votre projet de franchise. Voici les clés pour réussir votre implantation commerciale en Israël dès la première année.",
             "content": """
-                <h2>L'Intelligence Artificielle Révolutionne le Commerce</h2>
-                <p>En 2026, les centres commerciaux israéliens sont à la pointe de l'innovation technologique. L'IA est désormais omniprésente dans l'expérience d'achat.</p>
-                <h3>Personnalisation en Temps Réel</h3>
-                <p>Les systèmes d'IA analysent les comportements d'achat pour proposer des recommandations personnalisées instantanément. Chaque visiteur reçoit une expérience unique adaptée à ses préférences.</p>
-                <h3>Gestion des Stocks Intelligente</h3>
-                <p>Les algorithmes prédictifs permettent une gestion optimale des inventaires, réduisant le gaspillage de 40% et améliorant la disponibilité des produits.</p>
-                <h3>L'Avenir du Retail</h3>
-                <p>Israël se positionne comme leader mondial de l'innovation retail, attirant les marques internationales souhaitant tester les technologies de demain.</p>
-            """,
-            "category": "Retail Tech",
-            "image_url": "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800",
-            "language": "fr",
-            "published": True,
-            "tags": ["IA", "Retail", "Innovation", "Tel Aviv"],
-            "author": "IGV Team",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "Ouvrir son réseau en Israël : Guide Complet",
-            "slug": "ouvrir-reseau-israel-guide",
-            "excerpt": "Les étapes clés pour réussir son implantation de franchise sur le marché local.",
-            "content": """
-                <h2>Réussir son Expansion en Israël</h2>
-                <p>Le marché israélien offre des opportunités uniques pour les franchises internationales. Voici les étapes essentielles pour réussir.</p>
-                <h3>1. Étude de Marché Approfondie</h3>
-                <p>Comprendre les spécificités culturelles et commerciales du marché local est primordial. Le consommateur israélien est exigeant et connecté.</p>
-                <h3>2. Trouver le Bon Partenaire Local</h3>
-                <p>Un master-franchisé local avec une connaissance approfondie du terrain est votre meilleur atout. IGV peut vous aider à identifier le partenaire idéal.</p>
-                <h3>3. Adapter Votre Concept</h3>
-                <p>L'adaptation aux goûts locaux est cruciale. Cela inclut le menu, les horaires, et même la communication marketing.</p>
-                <h3>4. Aspects Juridiques et Fiscaux</h3>
-                <p>Le cadre réglementaire israélien a ses particularités. Un accompagnement juridique spécialisé est recommandé.</p>
-            """,
-            "category": "Expansion",
-            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
-            "language": "fr",
-            "published": True,
-            "tags": ["Franchise", "Expansion", "Business", "Guide"],
-            "author": "IGV Team",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "L'essor des Food Courts Premium",
-            "slug": "essor-food-courts-premium",
-            "excerpt": "Analyse du changement des habitudes de consommation post-2025.",
-            "content": """
-                <h2>La Révolution des Espaces de Restauration</h2>
-                <p>Les food courts traditionnels cèdent la place à des concepts premium offrant une expérience gastronomique raffinée.</p>
-                <h3>Tendances Observées en 2026</h3>
+                <h2>Du CDG-TLV à votre premier local commercial</h2>
+                <p>Chaque année, des centaines d'entrepreneurs francophones débarquent à l'aéroport Ben Gourion ou au port de Haïfa avec une idée claire : reproduire en Israël le modèle commercial qui a fait ses preuves en France. Réseau de restauration, concept retail, service à la personne... le rêve est là. La réalité, elle, demande une préparation sérieuse.</p>
+                <h3>1. Comprendre le marché israélien avant tout</h3>
+                <p>Israël n'est pas la France avec du soleil. Le consommateur israélien est exigeant, ultra-connecté et n'hésite pas à comparer les prix en temps réel. Il attend une expérience, pas seulement un produit. Votre concept doit être adapté, pas seulement traduit.</p>
                 <ul>
-                    <li><strong>Montée en gamme</strong> : Des chefs renommés ouvrent dans les centres commerciaux</li>
-                    <li><strong>Design architectural</strong> : Espaces soignés rivalisant avec les restaurants indépendants</li>
-                    <li><strong>Produits locaux</strong> : Focus sur la durabilité et les circuits courts</li>
+                    <li><strong>Le prix est roi</strong> mais la qualité prime — le consommateur paiera plus pour ce qui vaut vraiment</li>
+                    <li><strong>La rapidité de service</strong> est non-négociable dans le retail alimentaire</li>
+                    <li><strong>Le digital</strong> : les avis Google et Waze sont consultés avant chaque visite</li>
                 </ul>
-                <h3>Opportunités pour les Franchises</h3>
-                <p>Cette évolution ouvre de nouvelles perspectives pour les concepts de restauration haut de gamme cherchant une implantation rapide.</p>
+                <h3>2. Le statut d'Olé Hadach : vos avantages fiscaux</h3>
+                <p>En tant que nouvel immigrant (<em>Olé Hadach</em>), vous bénéficiez d'exemptions fiscales significatives pendant 10 ans sur vos revenus étrangers. Ces avantages sont un levier réel pour financer votre implantation initiale et réduire la pression sur votre trésorerie.</p>
+                <h3>3. Choisir la bonne ville d'implantation</h3>
+                <p>Tel Aviv, Jérusalem, Haïfa ou les nouvelles villes de périphérie ? Chaque marché a ses dynamiques :</p>
+                <ul>
+                    <li><strong>Tel Aviv</strong> : fort pouvoir d'achat, concurrence intense, loyers élevés</li>
+                    <li><strong>Jérusalem</strong> : clientèle mixte, flux touristiques importants</li>
+                    <li><strong>Haïfa</strong> : ville en mutation, loyers raisonnables, clientèle locale fidèle</li>
+                    <li><strong>Périphérie</strong> : moins de concurrence, soutien gouvernemental, croissance démographique</li>
+                </ul>
+                <h3>4. L'accompagnement IGV : de l'idée au premier jour d'ouverture</h3>
+                <p>Notre mission est de transformer votre expérience française en succès israélien. De la validation du concept à la formation des équipes locales, en passant par les démarches administratives, nous gérons chaque étape à vos côtés.</p>
+                <blockquote><p>« Maintenant que tu es israélien, c'est ton tour de construire. »</p></blockquote>
+                <p><strong>Vous avez un concept ? Parlez-nous de votre projet dès aujourd'hui.</strong></p>
             """,
-            "category": "Success Story",
-            "image_url": "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=800",
+            "category": "Alyah & Entrepreneuriat",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
             "language": "fr",
             "published": True,
-            "tags": ["Food Court", "Restauration", "Tendances"],
+            "tags": ["Alyah", "Franchise", "Entrepreneur", "Olim", "Implantation"],
             "author": "IGV Team",
             "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
             "created_at": now,
             "updated_at": now,
             "published_at": now
         },
         # ============ ENGLISH ============
         {
-            "title": "AI in Israeli Retail in 2026",
-            "slug": "ai-israeli-retail-2026",
-            "excerpt": "How artificial intelligence is transforming the customer experience in Tel Aviv shopping centers.",
+            "title": "Making Aliyah as a Franchise Entrepreneur",
+            "slug": "aliyah-franchise-entrepreneur-guide",
+            "excerpt": "You left Paris for Haifa with your suitcase and your business idea. Here are the keys to successfully launching your franchise in Israel from day one.",
             "content": """
-                <h2>Artificial Intelligence Revolutionizes Commerce</h2>
-                <p>In 2026, Israeli shopping centers are at the forefront of technological innovation. AI is now ubiquitous in the shopping experience.</p>
-                <h3>Real-Time Personalization</h3>
-                <p>AI systems analyze shopping behaviors to offer personalized recommendations instantly. Each visitor receives a unique experience tailored to their preferences.</p>
-                <h3>Intelligent Inventory Management</h3>
-                <p>Predictive algorithms enable optimal inventory management, reducing waste by 40% and improving product availability.</p>
-                <h3>The Future of Retail</h3>
-                <p>Israel positions itself as a global leader in retail innovation, attracting international brands wanting to test tomorrow's technologies.</p>
-            """,
-            "category": "Retail Tech",
-            "image_url": "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800",
-            "language": "en",
-            "published": True,
-            "tags": ["AI", "Retail", "Innovation", "Tel Aviv"],
-            "author": "IGV Team",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "Opening Your Network in Israel: Complete Guide",
-            "slug": "opening-network-israel-guide",
-            "excerpt": "Key steps to successfully establish your franchise in the local market.",
-            "content": """
-                <h2>Succeeding in Your Expansion to Israel</h2>
-                <p>The Israeli market offers unique opportunities for international franchises. Here are the essential steps to succeed.</p>
-                <h3>1. In-Depth Market Research</h3>
-                <p>Understanding the cultural and commercial specificities of the local market is paramount. Israeli consumers are demanding and connected.</p>
-                <h3>2. Finding the Right Local Partner</h3>
-                <p>A local master-franchisee with deep knowledge of the terrain is your best asset. IGV can help you identify the ideal partner.</p>
-                <h3>3. Adapting Your Concept</h3>
-                <p>Adaptation to local tastes is crucial. This includes menu, hours, and even marketing communication.</p>
-                <h3>4. Legal and Tax Aspects</h3>
-                <p>The Israeli regulatory framework has its particularities. Specialized legal support is recommended.</p>
-            """,
-            "category": "Expansion",
-            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
-            "language": "en",
-            "published": True,
-            "tags": ["Franchise", "Expansion", "Business", "Guide"],
-            "author": "IGV Team",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "The Rise of Premium Food Courts",
-            "slug": "rise-premium-food-courts",
-            "excerpt": "Analysis of changing consumption habits post-2025.",
-            "content": """
-                <h2>The Revolution of Dining Spaces</h2>
-                <p>Traditional food courts are giving way to premium concepts offering a refined gastronomic experience.</p>
-                <h3>Trends Observed in 2026</h3>
+                <h2>From CDG-TLV to Your First Commercial Space</h2>
+                <p>Every year, hundreds of French-speaking entrepreneurs land at Ben Gurion Airport or arrive at the port of Haifa with a clear vision: to replicate in Israel the business model that worked in France. Restaurant chains, retail concepts, personal services... the dream is there. Reality, however, requires serious preparation.</p>
+                <h3>1. Understanding the Israeli Market First</h3>
+                <p>Israel is not France with sunshine. Israeli consumers are demanding, hyper-connected, and don't hesitate to compare prices in real time. They expect an experience, not just a product. Your concept must be adapted, not just translated.</p>
                 <ul>
-                    <li><strong>Upscaling</strong>: Renowned chefs opening in shopping centers</li>
-                    <li><strong>Architectural design</strong>: Carefully designed spaces rivaling independent restaurants</li>
-                    <li><strong>Local products</strong>: Focus on sustainability and short circuits</li>
+                    <li><strong>Price matters</strong> but quality comes first — consumers will pay more for real value</li>
+                    <li><strong>Speed of service</strong> is non-negotiable in food retail</li>
+                    <li><strong>Digital presence</strong>: Google and Waze reviews are checked before every visit</li>
                 </ul>
-                <h3>Opportunities for Franchises</h3>
-                <p>This evolution opens new perspectives for high-end restaurant concepts seeking rapid establishment.</p>
+                <h3>2. Oleh Hadash Status: Your Tax Advantages</h3>
+                <p>As a new immigrant (<em>Oleh Hadash</em>), you benefit from significant tax exemptions for 10 years on foreign income. These advantages are a real lever to finance your initial setup and reduce cash flow pressure.</p>
+                <h3>3. Choosing the Right City</h3>
+                <p>Tel Aviv, Jerusalem, Haifa, or the new peripheral cities? Each market has its own dynamics:</p>
+                <ul>
+                    <li><strong>Tel Aviv</strong>: high purchasing power, intense competition, high rents</li>
+                    <li><strong>Jerusalem</strong>: mixed clientele, significant tourist traffic</li>
+                    <li><strong>Haifa</strong>: city in transition, reasonable rents, loyal local customers</li>
+                    <li><strong>Periphery</strong>: less competition, government support, demographic growth</li>
+                </ul>
+                <h3>4. IGV Support: From Idea to Opening Day</h3>
+                <p>Our mission is to turn your French experience into Israeli success. From concept validation to local team training and administrative processes, we manage every step alongside you.</p>
+                <blockquote><p>"Now that you are Israeli, it's your turn to build."</p></blockquote>
+                <p><strong>Have a concept? Tell us about your project today.</strong></p>
             """,
-            "category": "Success Story",
-            "image_url": "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=800",
+            "category": "Aliyah & Entrepreneurship",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
             "language": "en",
             "published": True,
-            "tags": ["Food Court", "Restaurant", "Trends"],
+            "tags": ["Aliyah", "Franchise", "Entrepreneur", "Olim", "Business"],
             "author": "IGV Team",
             "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
             "created_at": now,
             "updated_at": now,
             "published_at": now
         },
         # ============ HEBREW ============
         {
-            "title": "בינה מלאכותית בקמעונאות הישראלית ב-2026",
-            "slug": "ai-retail-israel-2026-he",
-            "excerpt": "כיצד הבינה המלאכותית משנה את חוויית הלקוח במרכזי הקניות של תל אביב.",
+            "title": "לעלות לישראל כיזם-זכיין: המדריך המלא לעולים",
+            "slug": "alyah-franchise-entrepreneur-he",
+            "excerpt": "עזבתם את פריז לחיפה עם המזוודות והרעיון העסקי שלכם. הנה המפתחות להצליח בהקמת הזיכיון בישראל כבר מהשנה הראשונה.",
             "content": """
-                <h2>הבינה המלאכותית מחוללת מהפכה במסחר</h2>
-                <p>ב-2026, מרכזי הקניות בישראל נמצאים בחזית החדשנות הטכנולוגית. הבינה המלאכותית נמצאת כעת בכל מקום בחוויית הקנייה.</p>
-                <h3>התאמה אישית בזמן אמת</h3>
-                <p>מערכות AI מנתחות התנהגויות קנייה כדי להציע המלצות מותאמות אישית באופן מיידי. כל מבקר מקבל חוויה ייחודית המותאמת להעדפותיו.</p>
-                <h3>ניהול מלאי חכם</h3>
-                <p>אלגוריתמים חזויים מאפשרים ניהול מלאי אופטימלי, מפחיתים בזבוז ב-40% ומשפרים את זמינות המוצרים.</p>
-                <h3>עתיד הקמעונאות</h3>
-                <p>ישראל ממצבת את עצמה כמובילה עולמית בחדשנות קמעונאית, ומושכת מותגים בינלאומיים המעוניינים לבחון את הטכנולוגיות של מחר.</p>
-            """,
-            "category": "Retail Tech",
-            "image_url": "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800",
-            "language": "he",
-            "published": True,
-            "tags": ["AI", "קמעונאות", "חדשנות", "תל אביב"],
-            "author": "צוות IGV",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "פתיחת רשת בישראל: מדריך מלא",
-            "slug": "opening-network-israel-guide-he",
-            "excerpt": "השלבים המרכזיים להצלחה בהקמת זיכיון בשוק המקומי.",
-            "content": """
-                <h2>להצליח בהתרחבות לישראל</h2>
-                <p>השוק הישראלי מציע הזדמנויות ייחודיות לזיכיונות בינלאומיים. הנה השלבים החיוניים להצלחה.</p>
-                <h3>1. מחקר שוק מעמיק</h3>
-                <p>הבנת המאפיינים התרבותיים והמסחריים של השוק המקומי היא קריטית. הצרכן הישראלי תובעני ומחובר.</p>
-                <h3>2. מציאת השותף המקומי הנכון</h3>
-                <p>מאסטר-זכיין מקומי עם היכרות עמוקה של השטח הוא הנכס הטוב ביותר שלכם. IGV יכולה לעזור לכם לזהות את השותף האידיאלי.</p>
-                <h3>3. התאמת הקונספט</h3>
-                <p>התאמה לטעם המקומי היא קריטית. זה כולל תפריט, שעות פעילות, ואפילו תקשורת שיווקית.</p>
-                <h3>4. היבטים משפטיים ומיסויים</h3>
-                <p>למסגרת הרגולטורית הישראלית יש מאפיינים ייחודיים. ליווי משפטי מתמחה מומלץ.</p>
-            """,
-            "category": "Expansion",
-            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
-            "language": "he",
-            "published": True,
-            "tags": ["זיכיון", "התרחבות", "עסקים", "מדריך"],
-            "author": "צוות IGV",
-            "views": 0,
-            "created_at": now,
-            "updated_at": now,
-            "published_at": now
-        },
-        {
-            "title": "עליית פודקורטים הפרימיום",
-            "slug": "rise-premium-food-courts-he",
-            "excerpt": "ניתוח השינוי בהרגלי הצריכה לאחר 2025.",
-            "content": """
-                <h2>המהפכה במרחבי האוכל</h2>
-                <p>פודקורטים מסורתיים פינו את מקומם לקונספטים פרימיום המציעים חוויה גסטרונומית מעודנת.</p>
-                <h3>מגמות שנצפו ב-2026</h3>
+                <h2>מ-CDG-TLV לחנות הראשונה שלכם</h2>
+                <p>מדי שנה עולים מאות יזמים דוברי צרפתית לישראל דרך שדה התעופה בן גוריון או נמל חיפה עם חזון ברור: לשחזר בישראל את המודל העסקי שעבד בצרפת. רשת מסעדות, קונספט קמעונאי, שירות אישי... החלום שם. המציאות, לעומת זאת, דורשת הכנה רצינית.</p>
+                <h3>1. להכיר את השוק הישראלי לפני הכל</h3>
+                <p>ישראל אינה צרפת עם שמש. הצרכן הישראלי תובעני, מחובר לרשת ולא מהסס להשוות מחירים בזמן אמת. הוא מצפה לחוויה, לא רק למוצר. הקונספט שלכם חייב להיות מותאם, לא רק מתורגם.</p>
                 <ul>
-                    <li><strong>שדרוג</strong>: שפים מפורסמים פותחים במרכזי קניות</li>
-                    <li><strong>עיצוב אדריכלי</strong>: חללים מעוצבים בקפידה המתחרים במסעדות עצמאיות</li>
-                    <li><strong>מוצרים מקומיים</strong>: דגש על קיימות ומעגלים קצרים</li>
+                    <li><strong>המחיר חשוב</strong> אך האיכות קובעת — הצרכן ישלם יותר עבור מה שבאמת שווה</li>
+                    <li><strong>מהירות השירות</strong> אינה ניתנת למשא ומתן בקמעונאות המזון</li>
+                    <li><strong>נוכחות דיגיטלית</strong>: חוות דעת ב-Google ו-Waze נקראות לפני כל ביקור</li>
                 </ul>
-                <h3>הזדמנויות לזיכיונות</h3>
-                <p>התפתחות זו פותחת אופקים חדשים לקונספטים של מסעדנות יוקרתית המחפשים התבססות מהירה.</p>
+                <h3>2. מעמד עולה חדש: היתרונות המיסויים שלכם</h3>
+                <p>כעולה חדש, אתם נהנים מפטורים ממס משמעותיים למשך 10 שנים על הכנסות ממקורות זרים. יתרונות אלה הם מנוף אמיתי למימון ההקמה הראשונית ולהפחתת לחץ תזרים המזומנים.</p>
+                <h3>3. בחירת העיר הנכונה</h3>
+                <p>תל אביב, ירושלים, חיפה או הערים החדשות בפריפריה? לכל שוק הדינמיקה שלו:</p>
+                <ul>
+                    <li><strong>תל אביב</strong>: כוח קנייה גבוה, תחרות עזה, שכירות יקרה</li>
+                    <li><strong>ירושלים</strong>: לקוחות מגוונים, תנועת תיירים משמעותית</li>
+                    <li><strong>חיפה</strong>: עיר בשינוי, שכירות סבירה, לקוחות מקומיים נאמנים</li>
+                    <li><strong>פריפריה</strong>: פחות תחרות, תמיכה ממשלתית, צמיחה דמוגרפית</li>
+                </ul>
+                <h3>4. ליווי IGV: מהרעיון ליום הפתיחה</h3>
+                <p>המשימה שלנו היא להפוך את הניסיון הצרפתי שלכם להצלחה ישראלית. מאימות הקונספט ועד להכשרת הצוות המקומי והליכי המנהל, אנו מנהלים כל שלב לצידכם.</p>
+                <blockquote><p>« עכשיו אתה הישראלי. הגיע תורך לבנות. »</p></blockquote>
+                <p><strong>יש לכם קונספט? ספרו לנו על הפרויקט שלכם היום.</strong></p>
             """,
-            "category": "Success Story",
-            "image_url": "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=800",
+            "category": "עלייה ויזמות",
+            "image_url": "https://israelgrowthventure.com/images/blog/olim-entrepreneur.jpg",
             "language": "he",
             "published": True,
-            "tags": ["פודקורט", "מסעדנות", "מגמות"],
+            "tags": ["עלייה", "זיכיון", "יזם", "עולים", "עסקים"],
             "author": "צוות IGV",
             "views": 0,
+            "group_slug": "alyah-franchise-entrepreneur",
             "created_at": now,
             "updated_at": now,
             "published_at": now
         },
     ]
-    
+
     result = await db.blog_articles.insert_many(articles)
-    
+
     return {
         "success": True,
-        "message": f"{len(result.inserted_ids)} articles created (3 FR + 3 EN + 3 HE)",
+        "message": f"{len(result.inserted_ids)} articles created (1 FR + 1 EN + 1 HE)",
         "seeded": len(result.inserted_ids)
     }
