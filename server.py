@@ -1224,7 +1224,10 @@ async def startup_db_init():
             
             # Migrate: set group_slug on blog articles so language switcher works
             await migrate_blog_group_slugs(db)
-            
+
+            # Seed new article + delete old ones
+            await seed_alyah_article_if_needed(db)
+
             # ❌ DISABLED: Was preventing multi-user setup
             # await cleanup_other_users()
             logging.info("✓ Multi-user mode enabled")
@@ -1261,6 +1264,81 @@ async def migrate_blog_group_slugs(db_conn):
         logging.info(f"✓ Blog group_slug migration: {total} articles updated")
     else:
         logging.info("✓ Blog group_slug migration: already up-to-date")
+
+
+OLD_BLOG_GROUP_SLUGS = ['retail-ia-israel-2026', 'opening-network-israel-guide', 'food-courts-premium']
+ALYAH_ARTICLE_SLUG = 'alyah-franchise-entrepreneur'
+ALYAH_ARTICLES = {
+    'fr': {
+        'title': 'Olim Hadashim : votre alyah, une aventure professionnelle à écrire',
+        'category': 'ALYAH PRO',
+        'excerpt': "De la blague sur le bateau à la success story : comment les olim entrepreneurs transforment leur alyah en carrière réussie en Israël.",
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+    },
+    'en': {
+        'title': 'Olim Hadashim: your aliyah, a professional adventure to write',
+        'category': 'ALYAH PRO',
+        'excerpt': "From the joke on the boat to the success story: how entrepreneur olim transform their aliyah into a successful career in Israel.",
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+    },
+    'he': {
+        'title': 'עולים חדשים: עלייתכם – הרפתקה מקצועית לכתיבה',
+        'category': 'עלייה פרו',
+        'excerpt': 'מהבדיחה על הסיפון לסיפור ההצלחה: כיצד יזמים עולים הופכים את עלייתם לקריירה מצליחה בישראל.',
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+    },
+}
+
+async def seed_alyah_article_if_needed(db_conn):
+    """
+    Idempotent: deletes the 3 deprecated article groups from MongoDB,
+    then seeds the alyah-franchise-entrepreneur article (FR/EN/HE) if missing.
+    """
+    if db_conn is None:
+        return
+    # Remove old articles
+    del_result = await db_conn.blog_articles.delete_many({"group_slug": {"$in": OLD_BLOG_GROUP_SLUGS}})
+    if del_result.deleted_count:
+        logging.info(f"✓ Deleted {del_result.deleted_count} old blog articles")
+    # Seed new article for each language
+    now = datetime.now(timezone.utc)
+    seeded = 0
+    for lang, fields in ALYAH_ARTICLES.items():
+        existing = await db_conn.blog_articles.find_one({"slug": ALYAH_ARTICLE_SLUG, "language": lang})
+        if not existing:
+            await db_conn.blog_articles.insert_one({
+                "title": fields['title'],
+                "slug": ALYAH_ARTICLE_SLUG,
+                "excerpt": fields['excerpt'],
+                "content": "",
+                "category": fields['category'],
+                "image_url": fields['image_url'],
+                "language": lang,
+                "published": True,
+                "tags": ["alyah", "entrepreneur", "israel"],
+                "author": "IGV",
+                "views": 0,
+                "created_at": now,
+                "updated_at": now,
+                "created_by": "system_seed",
+                "group_slug": ALYAH_ARTICLE_SLUG,
+            })
+            seeded += 1
+    if seeded:
+        logging.info(f"✓ Seeded {seeded} alyah-franchise-entrepreneur article(s)")
+    else:
+        logging.info("✓ alyah-franchise-entrepreneur already seeded")
+
+
+@api_router.post("/admin/migrate-blog")
+async def admin_migrate_blog(token: str = Query(...)):
+    """Trigger blog migration: delete old articles + seed alyah-franchise-entrepreneur."""
+    if not BOOTSTRAP_TOKEN:
+        raise HTTPException(status_code=500, detail="BOOTSTRAP_TOKEN not configured")
+    if token != BOOTSTRAP_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    await seed_alyah_article_if_needed(db)
+    return {"status": "ok", "message": "Blog migration complete"}
 
 
 async def create_default_admin_if_not_exists():
