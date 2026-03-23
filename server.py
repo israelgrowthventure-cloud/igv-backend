@@ -222,6 +222,12 @@ async def root():
     """Root endpoint"""
     return {"message": "IGV Backend API", "status": "running"}
 
+@app.head("/")
+async def root_head():
+    """HEAD handler for Render health check"""
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
 # CORS configuration - MUST be configured BEFORE routers
 # CORS origins from environment variable (comma-separated)
 cors_origins_from_env = os.getenv('CORS_ORIGINS', '')
@@ -1199,10 +1205,25 @@ async def startup_db_init():
             # Leads indexes
             await db.leads.create_index("created_at", background=True)
             await db.leads.create_index("status", background=True)
-            await db.leads.create_index([("email", 1)], unique=True, background=True, sparse=True)
+            # Email unique — drop old non-unique index if conflict
+            try:
+                await db.leads.create_index([("email", 1)], unique=True, background=True, sparse=True)
+            except Exception:
+                try:
+                    await db.leads.drop_index("email_1")
+                    await db.leads.create_index([("email", 1)], unique=True, background=True, sparse=True)
+                except Exception as e2:
+                    logging.warning(f"leads email index: {e2}")
             await db.leads.create_index("stage", background=True)
             # Contacts indexes
-            await db.contacts.create_index([("email", 1)], unique=True, background=True, sparse=True)
+            try:
+                await db.contacts.create_index([("email", 1)], unique=True, background=True, sparse=True)
+            except Exception:
+                try:
+                    await db.contacts.drop_index("email_1")
+                    await db.contacts.create_index([("email", 1)], unique=True, background=True, sparse=True)
+                except Exception as e2:
+                    logging.warning(f"contacts email index: {e2}")
             await db.contacts.create_index("name", background=True)
             await db.contacts.create_index("created_at", background=True)
             # Opportunities indexes  
