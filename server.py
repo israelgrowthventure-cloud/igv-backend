@@ -1248,6 +1248,7 @@ async def startup_db_init():
 
             # Seed new article + delete old ones
             await seed_alyah_article_if_needed(db)
+            await seed_expansion_israel_if_needed(db)
 
             # ❌ DISABLED: Was preventing multi-user setup
             # await cleanup_other_users()
@@ -1309,6 +1310,64 @@ ALYAH_ARTICLES = {
         'image_url': '/images/blog/olim-entrepreneur.webp',
     },
 }
+
+EXPANSION_ISRAEL_SLUG = 'expansion-israel-5-erreurs'
+EXPANSION_ISRAEL_ARTICLES = {
+    'fr': {
+        'title': 'Expansion en Israël : 5 Erreurs à Éviter pour les Enseignes Internationales',
+        'category': 'EXPANSION',
+        'excerpt': "Israël est un marché attractif mais exigeant. Découvrez les 5 erreurs stratégiques les plus courantes des enseignes internationales et comment les éviter.",
+        'image_url': '/images/blog/expansion-israel-5-erreurs.webp',
+    },
+    'en': {
+        'title': 'Expanding in Israel: 5 Mistakes to Avoid for International Brands',
+        'category': 'EXPANSION',
+        'excerpt': "Israel is an attractive but demanding market. Discover the 5 most common strategic mistakes international brands make and how to avoid them.",
+        'image_url': '/images/blog/expansion-israel-5-erreurs.webp',
+    },
+    'he': {
+        'title': 'התרחבות בישראל: 5 טעויות שכיחות שיש להימנע מהן עבור מותגים בינלאומיים',
+        'category': 'התרחבות',
+        'excerpt': 'ישראל היא שוק אטרקטיבי אך דורשני. גלו את 5 הטעויות האסטרטגיות הנפוצות ביותר של מותגים בינלאומיים וכיצד להימנע מהן.',
+        'image_url': '/images/blog/expansion-israel-5-erreurs.webp',
+    },
+}
+
+async def seed_expansion_israel_if_needed(db_conn):
+    """
+    Idempotent: seeds expansion-israel-5-erreurs shells (FR/EN/HE) if missing.
+    Content is filled by running seed_expansion_israel.py separately.
+    """
+    if db_conn is None:
+        return
+    now = datetime.now(timezone.utc)
+    seeded = 0
+    for lang, fields in EXPANSION_ISRAEL_ARTICLES.items():
+        existing = await db_conn.blog_articles.find_one({"slug": EXPANSION_ISRAEL_SLUG, "language": lang})
+        if not existing:
+            await db_conn.blog_articles.insert_one({
+                "title": fields['title'],
+                "slug": EXPANSION_ISRAEL_SLUG,
+                "excerpt": fields['excerpt'],
+                "content": "",
+                "category": fields['category'],
+                "image_url": fields['image_url'],
+                "language": lang,
+                "published": True,
+                "tags": ["expansion", "israel", "enseignes"],
+                "author": "IGV",
+                "views": 0,
+                "created_at": now,
+                "updated_at": now,
+                "created_by": "system_seed",
+                "group_slug": EXPANSION_ISRAEL_SLUG,
+            })
+            seeded += 1
+    if seeded:
+        logging.info(f"✓ Seeded {seeded} expansion-israel-5-erreurs article(s)")
+    else:
+        logging.info("✓ expansion-israel-5-erreurs already seeded")
+
 
 async def seed_alyah_article_if_needed(db_conn):
     """
