@@ -72,9 +72,9 @@ ARTICLE_META = {
 }
 
 LANG_HEADERS = {
-    "fr": "## **Français**",
-    "he": "## **Hébreu**",
-    "en": "## **English**",
+    "fr": "# **Français**",
+    "he": "# **Hébreu**",
+    "en": "# **English**",
 }
 
 
@@ -95,7 +95,7 @@ def parse_language_sections(raw: str) -> dict:
         start = positions[lang]
         end = positions[sorted_langs[i + 1]] if i + 1 < len(sorted_langs) else len(raw)
         block = raw[start:end]
-        block = re.sub(r"^##\s+\*\*[^*]+\*\*\s*\n?", "", block, count=1)
+        block = re.sub(r"^#\s+\*\*[^*]+\*\*\s*\n?", "", block, count=1)
         sections[lang] = block.strip()
 
     return sections

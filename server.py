@@ -1351,9 +1351,9 @@ async def seed_expansion_israel_if_needed(db_conn):
             import re as _re
             raw = md_file.read_text(encoding="utf-8")
             headers = {
-                "fr": "## **Français**",
-                "he": "## **Hébreu**",
-                "en": "## **English**",
+                "fr": "# **Français**",
+                "he": "# **Hébreu**",
+                "en": "# **English**",
             }
             positions = {lang: raw.find(h) for lang, h in headers.items()}
             sorted_langs = sorted(positions, key=lambda l: positions[l])
@@ -1361,7 +1361,7 @@ async def seed_expansion_israel_if_needed(db_conn):
                 start = positions[lang]
                 end = positions[sorted_langs[i + 1]] if i + 1 < len(sorted_langs) else len(raw)
                 block = raw[start:end]
-                block = _re.sub(r"^##\s+\*\*[^*]+\*\*\s*\n?", "", block, count=1)
+                block = _re.sub(r"^#\s+\*\*[^*]+\*\*\s*\n?", "", block, count=1)
                 html_content[lang] = _md.markdown(
                     block.strip(), extensions=["extra", "nl2br"], output_format="html"
                 )
