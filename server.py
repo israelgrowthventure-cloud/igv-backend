@@ -1249,6 +1249,9 @@ async def startup_db_init():
             # Seed new article + delete old ones
             await seed_alyah_article_if_needed(db)
 
+            # Populate expansion article content from .md files if missing
+            await seed_expansion_article_if_needed(db)
+
             # ❌ DISABLED: Was preventing multi-user setup
             # await cleanup_other_users()
             logging.info("✓ Multi-user mode enabled")
@@ -1349,6 +1352,98 @@ async def seed_alyah_article_if_needed(db_conn):
         logging.info(f"✓ Seeded {seeded} alyah-franchise-entrepreneur article(s)")
     else:
         logging.info("✓ alyah-franchise-entrepreneur already seeded")
+
+
+EXPANSION_ARTICLE_SLUG = 'expansion-israel-5-erreurs'
+EXPANSION_ARTICLES = {
+    'fr': {
+        'title': 'Expansion en Israël : 5 Erreurs à Éviter pour les Enseignes Internationales',
+        'category': 'Future Commerce',
+        'excerpt': "Israël est un marché attractif pour les enseignes internationales, mais complexe. Découvrez les 5 erreurs courantes à éviter pour réussir votre expansion.",
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+        'tags': ['expansion', 'israel', 'franchise', 'enseignes', 'erreurs'],
+    },
+    'en': {
+        'title': 'Expanding in Israel: 5 Mistakes to Avoid for International Brands',
+        'category': 'Future Commerce',
+        'excerpt': "Israel is an attractive market for international brands, but complex. Discover the 5 common mistakes to avoid for a successful expansion.",
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+        'tags': ['expansion', 'israel', 'franchise', 'brands', 'mistakes'],
+    },
+    'he': {
+        'title': 'התרחבות בישראל: 5 טעויות שכיחות שיש להימנע מהן עבור מותגים בינלאומיים',
+        'category': 'Future Commerce',
+        'excerpt': 'ישראל היא שוק אטרקטיבי עבור מותגים בינלאומיים, אך מורכב. גלו את 5 הטעויות הנפוצות שיש להימנע מהן להתרחבות מוצלחת.',
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+        'tags': ['התרחבות', 'ישראל', 'זיכיון', 'מותגים', 'טעויות'],
+    },
+}
+
+
+async def seed_expansion_article_if_needed(db_conn):
+    """
+    Idempotent: seeds or updates the expansion-israel-5-erreurs article (FR/EN/HE).
+    Reads content from articles/{lang}/expansion-israel-5-erreurs.md and converts to HTML.
+    Only updates the content field if it is currently empty or shorter than 500 chars.
+    """
+    if db_conn is None:
+        return
+    try:
+        from markdown_it import MarkdownIt
+        md = MarkdownIt(options_update={"html": True})
+    except ImportError:
+        logging.warning("markdown-it-py not available; skipping expansion article seed")
+        return
+
+    articles_base = Path(__file__).parent / "articles"
+    now = datetime.now(timezone.utc)
+    seeded = updated = 0
+
+    for lang, fields in EXPANSION_ARTICLES.items():
+        md_path = articles_base / lang / f"{EXPANSION_ARTICLE_SLUG}.md"
+        if not md_path.exists():
+            logging.warning(f"Missing article file: {md_path}")
+            continue
+        html_content = md.render(md_path.read_text(encoding="utf-8"))
+
+        existing = await db_conn.blog_articles.find_one(
+            {"slug": EXPANSION_ARTICLE_SLUG, "language": lang}
+        )
+        if existing:
+            if len(existing.get("content", "")) < 500:
+                await db_conn.blog_articles.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {
+                        "content": html_content,
+                        "group_slug": EXPANSION_ARTICLE_SLUG,
+                        "updated_at": now,
+                    }}
+                )
+                updated += 1
+        else:
+            await db_conn.blog_articles.insert_one({
+                "title": fields['title'],
+                "slug": EXPANSION_ARTICLE_SLUG,
+                "excerpt": fields['excerpt'],
+                "content": html_content,
+                "category": fields['category'],
+                "image_url": fields['image_url'],
+                "language": lang,
+                "published": True,
+                "tags": fields['tags'],
+                "author": "IGV",
+                "views": 0,
+                "created_at": now,
+                "updated_at": now,
+                "created_by": "system_seed",
+                "group_slug": EXPANSION_ARTICLE_SLUG,
+            })
+            seeded += 1
+
+    if seeded or updated:
+        logging.info(f"✓ expansion-israel-5-erreurs: {seeded} created, {updated} content updated")
+    else:
+        logging.info("✓ expansion-israel-5-erreurs already up-to-date")
 
 
 @api_router.post("/admin/migrate-blog")
