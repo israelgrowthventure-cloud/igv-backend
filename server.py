@@ -201,8 +201,8 @@ async def debug_routers():
         "mini_analysis_router_loaded": 'mini_analysis_routes' in sys.modules,
         "invoice_router_loaded": INVOICE_ROUTER_LOADED,
         "invoice_router_error": INVOICE_ROUTER_ERROR,
-        "monetico_router_loaded": MONETICO_ROUTER_LOADED,
-        "monetico_router_error": MONETICO_ROUTER_ERROR,
+        "tranzilla_router_loaded": TRANZILLA_ROUTER_LOADED,
+        "tranzilla_router_error": TRANZILLA_ROUTER_ERROR,
         "gemini_api_key_set": bool(os.getenv('GEMINI_API_KEY')),
         "gemini_api_key_length": len(os.getenv('GEMINI_API_KEY', '')),
         "mongodb_uri_set": bool(mongo_url),
@@ -449,14 +449,6 @@ class AdminUserCreate(BaseModel):
     last_name: str = ""
     password: str
     role: str = 'viewer'  # Default to lowest privilege
-
-class MoneticopaymentRequest(BaseModel):
-    pack_type: str  # 'analyse'
-    amount: float
-    currency: str
-    customer_email: EmailStr
-    customer_name: str
-    language: str = 'fr'
 
 # Security
 security = HTTPBearer()
@@ -1006,82 +998,6 @@ async def get_stats(user: Dict = Depends(get_current_user)):
 # REMOVED: GET /admin/users - now handled by admin_user_routes.py (uses crm_users collection)
 # Old endpoints used db.users collection, new ones use db.crm_users (correct for CRM)
 
-# ============================================================
-# Monetico Payment Endpoints
-# ============================================================
-
-def generate_monetico_mac(data: Dict[str, str], key: str) -> str:
-    """Generate Monetico MAC signature"""
-    # Concatenate values in specific order
-    message = '*'.join([
-        data.get('TPE', ''),
-        data.get('date', ''),
-        data.get('montant', ''),
-        data.get('reference', ''),
-        data.get('texte-libre', ''),
-        data.get('version', '3.0'),
-        data.get('lgue', 'FR'),
-        data.get('societe', ''),
-        data.get('mail', '')
-    ])
-    
-    # Create HMAC-SHA1 signature
-    mac = hmac.new(key.encode(), message.encode(), hashlib.sha1).hexdigest()
-    return mac
-
-@api_router.post("/monetico/init-payment")
-async def init_monetico_payment(payment: MoneticopaymentRequest):
-    """Initialize Monetico payment (Pack Analyse only)"""
-    
-    # Get Monetico config from environment
-    monetico_tpe = os.getenv('MONETICO_TPE')
-    monetico_key = os.getenv('MONETICO_KEY')
-    monetico_company = os.getenv('MONETICO_COMPANY_CODE')
-    monetico_mode = os.getenv('MONETICO_MODE', 'TEST')
-    
-    if not all([monetico_tpe, monetico_key, monetico_company]):
-        raise HTTPException(status_code=500, detail="Monetico not configured")
-    
-    # Only Pack Analyse is payable via Monetico
-    if payment.pack_type != 'analyse':
-        raise HTTPException(status_code=400, detail="Only Pack Analyse is available for online payment")
-    
-    # Generate unique reference
-    reference = f"IGV-{payment.pack_type.upper()}-{uuid.uuid4().hex[:8]}"
-    
-    # Prepare payment data
-    payment_data = {
-        'TPE': monetico_tpe,
-        'date': datetime.now(timezone.utc).strftime('%d/%m/%Y:%H:%M:%S'),
-        'montant': f"{payment.amount:.2f}{payment.currency}",
-        'reference': reference,
-        'texte-libre': f"Pack {payment.pack_type}",
-        'version': '3.0',
-        'lgue': payment.language.upper(),
-        'societe': monetico_company,
-        'mail': payment.customer_email
-    }
-    
-    # Generate MAC
-    mac = generate_monetico_mac(payment_data, monetico_key)
-    payment_data['MAC'] = mac
-    
-    # Return payment form data
-    return {
-        "reference": reference,
-        "payment_url": f"https://p.monetico-services.com/paiement.cgi" if monetico_mode == 'PRODUCTION' else "https://p.monetico-services.com/test/paiement.cgi",
-        "form_data": payment_data
-    }
-
-@api_router.post("/monetico/callback")
-async def monetico_callback(data: Dict[str, Any]):
-    """Handle Monetico payment callback"""
-    # Log callback for debugging
-    logging.info(f"Monetico callback received: {data}")
-    
-    # TODO: Verify MAC, store payment result, send confirmation email, generate PDF invoice
-    
-    return {"version": "3.0", "cdr": "0"}  # Acknowledge receipt
 
 
 # ===== ROUTERS REGISTRATION =====
