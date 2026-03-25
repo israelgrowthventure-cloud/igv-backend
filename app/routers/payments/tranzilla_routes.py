@@ -107,8 +107,8 @@ def tranzilla_to_currency(code: int) -> str:
 
 
 def tranzilla_lang(language: str) -> str:
-    """Map i18n language code to Tranzilla lang parameter."""
-    return 'il' if language == 'he' else 'en'
+    """Map i18n language code to Tranzilla lang parameter (he / en)."""
+    return 'he' if language == 'he' else 'en'
 
 
 # ──────────────────────────────────────────
