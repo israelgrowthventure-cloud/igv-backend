@@ -123,6 +123,11 @@ class InitPaymentRequest(BaseModel):
     customer_email: Optional[str] = None
     customer_name: Optional[str] = None
     pack_type: Optional[str] = None
+    # Booking fields — only for audit pack
+    booking_start: Optional[str] = None
+    booking_end: Optional[str] = None
+    booking_name: Optional[str] = None
+    booking_phone: Optional[str] = None
 
 
 # ──────────────────────────────────────────
@@ -174,6 +179,16 @@ async def init_payment(req: InitPaymentRequest):
         "tranzilla_response_code": None,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
+        # Booking fields (audit pack only)
+        "booking_start": req.booking_start,
+        "booking_end": req.booking_end,
+        "booking_email": req.customer_email,
+        "booking_name": req.booking_name,
+        "booking_phone": req.booking_phone,
+        "booking_confirmed": False,
+        "booking_meet_link": None,
+        "booking_event_id": None,
+        "booking_error": None,
     }
 
     if db is not None:
@@ -209,6 +224,74 @@ async def init_payment(req: InitPaymentRequest):
         "reference": reference,
         "provider": "tranzilla",
     }
+
+
+# ──────────────────────────────────────────
+# BOOKING TRIGGER (called after PAID)
+# ──────────────────────────────────────────
+async def _trigger_booking_after_payment(db, noorder: str, payment_doc: dict):
+    """
+    Creates a Google Calendar event + sends confirmation email after successful payment.
+    Stores meetLink and eventId in the payment record.
+    Non-fatal: logs errors, never crashes the notify webhook.
+    """
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    from app.routers.booking_routes import _create_booking_event
+
+    booking_start = payment_doc.get("booking_start")
+    booking_end   = payment_doc.get("booking_end")
+    booking_email = payment_doc.get("booking_email")
+
+    if not (booking_start and booking_end and booking_email):
+        logging.info(f"[tranzilla] No booking data for ref {noorder} — skipping calendar creation")
+        return
+
+    try:
+        tz = ZoneInfo("Asia/Jerusalem")
+        start_dt = _dt.fromisoformat(booking_start)
+        end_dt   = _dt.fromisoformat(booking_end)
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=tz)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=tz)
+
+        result = await _create_booking_event(
+            start_dt=start_dt,
+            end_dt=end_dt,
+            email=booking_email,
+            name=payment_doc.get("booking_name"),
+            phone=payment_doc.get("booking_phone"),
+            topic="audit",
+        )
+
+        await db.payments.update_one(
+            {"payment_id": noorder},
+            {"$set": {
+                "booking_confirmed": True,
+                "booking_meet_link": result.get("meetLink"),
+                "booking_event_id":  result.get("eventId"),
+                "booking_error":     None,
+                "updated_at":        datetime.now(timezone.utc),
+            }}
+        )
+        logging.info(f"[tranzilla] Booking created for ref {noorder} — meetLink: {result.get('meetLink')}")
+
+    except Exception as exc:
+        error_msg = str(exc)
+        logging.error(f"[tranzilla] Booking creation failed for ref {noorder}: {error_msg}")
+        if db is not None:
+            try:
+                await db.payments.update_one(
+                    {"payment_id": noorder},
+                    {"$set": {
+                        "booking_confirmed": False,
+                        "booking_error": error_msg,
+                        "updated_at": datetime.now(timezone.utc),
+                    }}
+                )
+            except Exception:
+                pass
 
 
 @router.post("/notify")
@@ -283,6 +366,13 @@ async def tranzilla_notify(request: Request):
                 },
                 "created_at": datetime.now(timezone.utc),
             })
+
+            # Trigger Google Calendar booking if payment succeeded
+            if is_success:
+                payment_doc = await db.payments.find_one({"payment_id": noorder})
+                if payment_doc:
+                    await _trigger_booking_after_payment(db, noorder, payment_doc)
+
         except Exception as e:
             logging.error(f"Tranzilla notify DB error: {e}")
 
@@ -329,3 +419,27 @@ async def list_payments(
         doc["_id"] = str(doc["_id"])
 
     return {"payments": docs, "count": len(docs)}
+
+
+@router.get("/booking/{reference}")
+async def get_booking_status(reference: str):
+    """
+    Public endpoint — frontend polls after payment to get booking/meetLink status.
+    Returns: { payment_status, booking_confirmed, meet_link, event_id, booking_start, booking_error }
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    doc = await db.payments.find_one({"payment_id": reference})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    return {
+        "payment_status":    doc.get("status"),
+        "booking_confirmed": doc.get("booking_confirmed", False),
+        "meet_link":         doc.get("booking_meet_link"),
+        "event_id":          doc.get("booking_event_id"),
+        "booking_start":     doc.get("booking_start"),
+        "booking_error":     doc.get("booking_error"),
+    }
