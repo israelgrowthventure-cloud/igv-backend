@@ -4,7 +4,7 @@ Terminal: fxpigv148 | Supplier: 0070698
 Production-ready: hosted payment page, webhook notification, payment tracking
 """
 
-VERSION = "5.0-DEBUG-FORCE-HE"
+VERSION = "5.1-PROD"
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -216,12 +216,11 @@ async def init_payment(req: InitPaymentRequest):
         "notify_url":    TRANZILLA_NOTIFY_URL,
     }
 
-    # FORCE BRUTALE — lang=he écrit en dur, jamais via fonction (v5.0-DEBUG-FORCE-HE)
-    payment_url = f"{TRANZILLA_ENDPOINT}?{urlencode(params, quote_via=quote)}&lang=he"
+    # Use the requested language (with fallback to English)
+    tranzilla_language = tranzilla_lang(req.language)
+    payment_url = f"{TRANZILLA_ENDPOINT}?{urlencode(params, quote_via=quote)}&lang={tranzilla_language}"
 
-    print(f"🔍 DEBUG [{VERSION}] Tranzilla URL: {payment_url}", flush=True)
-    logging.info(f"🔍 DEBUG [{VERSION}] Tranzilla URL: {payment_url}")
-    logging.info(f"🔍 DEBUG req.language reçu du frontend: '{req.language}'")
+    logging.info(f"[Tranzilla] Payment initiated — ref: {reference} | lang: {tranzilla_language} | amount: {req.amount} {req.currency}")
 
     return {
         "payment_url": payment_url,
@@ -241,7 +240,12 @@ async def _trigger_booking_after_payment(db, noorder: str, payment_doc: dict):
     """
     from datetime import datetime as _dt
     from zoneinfo import ZoneInfo
-    from app.routers.booking_routes import _create_booking_event
+    # Lazy import to avoid circular dependency at module load time
+    try:
+        from app.routers.booking_routes import _create_booking_event
+    except ImportError:
+        logging.error(f"[tranzilla] Cannot import _create_booking_event — booking module not available")
+        return
 
     booking_start = payment_doc.get("booking_start")
     booking_end   = payment_doc.get("booking_end")
