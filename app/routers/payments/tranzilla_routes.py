@@ -107,8 +107,8 @@ def tranzilla_to_currency(code: int) -> str:
 
 
 def tranzilla_lang(language: str) -> str:
-    """Map i18n language code to Tranzilla lang parameter (he / en)."""
-    return 'he' if language == 'he' else 'en'
+    """Terminal fxpigv148 supports he only — force he regardless of UI language."""
+    return 'he'
 
 
 # ──────────────────────────────────────────
