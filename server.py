@@ -90,7 +90,6 @@ except Exception as e:
 
 # New routers with error handling
 INVOICE_ROUTER_ERROR = None
-MONETICO_ROUTER_ERROR = None
 
 try:
     from app.routers.payments.invoice_routes import router as invoice_router
@@ -102,15 +101,16 @@ except Exception as e:
     INVOICE_ROUTER_LOADED = False
     invoice_router = None
 
+TRANZILLA_ROUTER_ERROR = None
 try:
-    from app.routers.payments.monetico_routes import router as monetico_router
-    MONETICO_ROUTER_LOADED = True
-    logging.info("✓ Monetico router loaded successfully")
+    from app.routers.payments.tranzilla_routes import router as tranzilla_router
+    TRANZILLA_ROUTER_LOADED = True
+    logging.info("✓ Tranzilla router loaded successfully")
 except Exception as e:
-    MONETICO_ROUTER_ERROR = f"{type(e).__name__}: {str(e)}"
-    logging.error(f"✗ Failed to load monetico_routes: {MONETICO_ROUTER_ERROR}")
-    MONETICO_ROUTER_LOADED = False
-    monetico_router = None
+    TRANZILLA_ROUTER_ERROR = f"{type(e).__name__}: {str(e)}"
+    logging.error(f"✗ Failed to load tranzilla_routes: {TRANZILLA_ROUTER_ERROR}")
+    TRANZILLA_ROUTER_LOADED = False
+    tranzilla_router = None
 
 PAYMENT_ROUTER_ERROR = None
 try:
@@ -201,8 +201,8 @@ async def debug_routers():
         "mini_analysis_router_loaded": 'mini_analysis_routes' in sys.modules,
         "invoice_router_loaded": INVOICE_ROUTER_LOADED,
         "invoice_router_error": INVOICE_ROUTER_ERROR,
-        "monetico_router_loaded": MONETICO_ROUTER_LOADED,
-        "monetico_router_error": MONETICO_ROUTER_ERROR,
+        "tranzilla_router_loaded": TRANZILLA_ROUTER_LOADED,
+        "tranzilla_router_error": TRANZILLA_ROUTER_ERROR,
         "gemini_api_key_set": bool(os.getenv('GEMINI_API_KEY')),
         "gemini_api_key_length": len(os.getenv('GEMINI_API_KEY', '')),
         "mongodb_uri_set": bool(mongo_url),
@@ -449,14 +449,6 @@ class AdminUserCreate(BaseModel):
     last_name: str = ""
     password: str
     role: str = 'viewer'  # Default to lowest privilege
-
-class MoneticopaymentRequest(BaseModel):
-    pack_type: str  # 'analyse'
-    amount: float
-    currency: str
-    customer_email: EmailStr
-    customer_name: str
-    language: str = 'fr'
 
 # Security
 security = HTTPBearer()
@@ -1006,82 +998,6 @@ async def get_stats(user: Dict = Depends(get_current_user)):
 # REMOVED: GET /admin/users - now handled by admin_user_routes.py (uses crm_users collection)
 # Old endpoints used db.users collection, new ones use db.crm_users (correct for CRM)
 
-# ============================================================
-# Monetico Payment Endpoints
-# ============================================================
-
-def generate_monetico_mac(data: Dict[str, str], key: str) -> str:
-    """Generate Monetico MAC signature"""
-    # Concatenate values in specific order
-    message = '*'.join([
-        data.get('TPE', ''),
-        data.get('date', ''),
-        data.get('montant', ''),
-        data.get('reference', ''),
-        data.get('texte-libre', ''),
-        data.get('version', '3.0'),
-        data.get('lgue', 'FR'),
-        data.get('societe', ''),
-        data.get('mail', '')
-    ])
-    
-    # Create HMAC-SHA1 signature
-    mac = hmac.new(key.encode(), message.encode(), hashlib.sha1).hexdigest()
-    return mac
-
-@api_router.post("/monetico/init-payment")
-async def init_monetico_payment(payment: MoneticopaymentRequest):
-    """Initialize Monetico payment (Pack Analyse only)"""
-    
-    # Get Monetico config from environment
-    monetico_tpe = os.getenv('MONETICO_TPE')
-    monetico_key = os.getenv('MONETICO_KEY')
-    monetico_company = os.getenv('MONETICO_COMPANY_CODE')
-    monetico_mode = os.getenv('MONETICO_MODE', 'TEST')
-    
-    if not all([monetico_tpe, monetico_key, monetico_company]):
-        raise HTTPException(status_code=500, detail="Monetico not configured")
-    
-    # Only Pack Analyse is payable via Monetico
-    if payment.pack_type != 'analyse':
-        raise HTTPException(status_code=400, detail="Only Pack Analyse is available for online payment")
-    
-    # Generate unique reference
-    reference = f"IGV-{payment.pack_type.upper()}-{uuid.uuid4().hex[:8]}"
-    
-    # Prepare payment data
-    payment_data = {
-        'TPE': monetico_tpe,
-        'date': datetime.now(timezone.utc).strftime('%d/%m/%Y:%H:%M:%S'),
-        'montant': f"{payment.amount:.2f}{payment.currency}",
-        'reference': reference,
-        'texte-libre': f"Pack {payment.pack_type}",
-        'version': '3.0',
-        'lgue': payment.language.upper(),
-        'societe': monetico_company,
-        'mail': payment.customer_email
-    }
-    
-    # Generate MAC
-    mac = generate_monetico_mac(payment_data, monetico_key)
-    payment_data['MAC'] = mac
-    
-    # Return payment form data
-    return {
-        "reference": reference,
-        "payment_url": f"https://p.monetico-services.com/paiement.cgi" if monetico_mode == 'PRODUCTION' else "https://p.monetico-services.com/test/paiement.cgi",
-        "form_data": payment_data
-    }
-
-@api_router.post("/monetico/callback")
-async def monetico_callback(data: Dict[str, Any]):
-    """Handle Monetico payment callback"""
-    # Log callback for debugging
-    logging.info(f"Monetico callback received: {data}")
-    
-    # TODO: Verify MAC, store payment result, send confirmation email, generate PDF invoice
-    
-    return {"version": "3.0", "cdr": "0"}  # Acknowledge receipt
 
 
 # ===== ROUTERS REGISTRATION =====
@@ -1137,11 +1053,11 @@ if INVOICE_ROUTER_LOADED and invoice_router:
 else:
     logging.warning("✗ Invoice router not registered (import failed)")
 
-if MONETICO_ROUTER_LOADED and monetico_router:
-    app.include_router(monetico_router)  # Monetico Payment Integration
-    logging.info("✓ Monetico router registered")
+if TRANZILLA_ROUTER_LOADED and tranzilla_router:
+    app.include_router(tranzilla_router)  # Tranzilla Payment Integration
+    logging.info("✓ Tranzilla router registered")
 else:
-    logging.warning("✗ Monetico router not registered (import failed)")
+    logging.warning("✗ Tranzilla router not registered (import failed)")
 
 if PAYMENT_ROUTER_LOADED and payment_router:
     app.include_router(payment_router)  # Payoneer Payment Sessions
@@ -1249,6 +1165,9 @@ async def startup_db_init():
             # Seed new article + delete old ones
             await seed_alyah_article_if_needed(db)
             await seed_expansion_israel_if_needed(db)
+
+            # Populate expansion article content from .md files if missing
+            await seed_expansion_article_if_needed(db)
 
             # ❌ DISABLED: Was preventing multi-user setup
             # await cleanup_other_users()
@@ -1446,6 +1365,98 @@ async def seed_alyah_article_if_needed(db_conn):
         logging.info(f"✓ Seeded {seeded} alyah-franchise-entrepreneur article(s)")
     else:
         logging.info("✓ alyah-franchise-entrepreneur already seeded")
+
+
+EXPANSION_ARTICLE_SLUG = 'expansion-israel-5-erreurs'
+EXPANSION_ARTICLES = {
+    'fr': {
+        'title': 'Expansion en Israël : 5 Erreurs à Éviter pour les Enseignes Internationales',
+        'category': 'Future Commerce',
+        'excerpt': "Israël est un marché attractif pour les enseignes internationales, mais complexe. Découvrez les 5 erreurs courantes à éviter pour réussir votre expansion.",
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+        'tags': ['expansion', 'israel', 'franchise', 'enseignes', 'erreurs'],
+    },
+    'en': {
+        'title': 'Expanding in Israel: 5 Mistakes to Avoid for International Brands',
+        'category': 'Future Commerce',
+        'excerpt': "Israel is an attractive market for international brands, but complex. Discover the 5 common mistakes to avoid for a successful expansion.",
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+        'tags': ['expansion', 'israel', 'franchise', 'brands', 'mistakes'],
+    },
+    'he': {
+        'title': 'התרחבות בישראל: 5 טעויות שכיחות שיש להימנע מהן עבור מותגים בינלאומיים',
+        'category': 'Future Commerce',
+        'excerpt': 'ישראל היא שוק אטרקטיבי עבור מותגים בינלאומיים, אך מורכב. גלו את 5 הטעויות הנפוצות שיש להימנע מהן להתרחבות מוצלחת.',
+        'image_url': '/images/blog/olim-entrepreneur.webp',
+        'tags': ['התרחבות', 'ישראל', 'זיכיון', 'מותגים', 'טעויות'],
+    },
+}
+
+
+async def seed_expansion_article_if_needed(db_conn):
+    """
+    Idempotent: seeds or updates the expansion-israel-5-erreurs article (FR/EN/HE).
+    Reads content from articles/{lang}/expansion-israel-5-erreurs.md and converts to HTML.
+    Only updates the content field if it is currently empty or shorter than 500 chars.
+    """
+    if db_conn is None:
+        return
+    try:
+        from markdown_it import MarkdownIt
+        md = MarkdownIt(options_update={"html": True})
+    except ImportError:
+        logging.warning("markdown-it-py not available; skipping expansion article seed")
+        return
+
+    articles_base = Path(__file__).parent / "articles"
+    now = datetime.now(timezone.utc)
+    seeded = updated = 0
+
+    for lang, fields in EXPANSION_ARTICLES.items():
+        md_path = articles_base / lang / f"{EXPANSION_ARTICLE_SLUG}.md"
+        if not md_path.exists():
+            logging.warning(f"Missing article file: {md_path}")
+            continue
+        html_content = md.render(md_path.read_text(encoding="utf-8"))
+
+        existing = await db_conn.blog_articles.find_one(
+            {"slug": EXPANSION_ARTICLE_SLUG, "language": lang}
+        )
+        if existing:
+            if len(existing.get("content", "")) < 500:
+                await db_conn.blog_articles.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {
+                        "content": html_content,
+                        "group_slug": EXPANSION_ARTICLE_SLUG,
+                        "updated_at": now,
+                    }}
+                )
+                updated += 1
+        else:
+            await db_conn.blog_articles.insert_one({
+                "title": fields['title'],
+                "slug": EXPANSION_ARTICLE_SLUG,
+                "excerpt": fields['excerpt'],
+                "content": html_content,
+                "category": fields['category'],
+                "image_url": fields['image_url'],
+                "language": lang,
+                "published": True,
+                "tags": fields['tags'],
+                "author": "IGV",
+                "views": 0,
+                "created_at": now,
+                "updated_at": now,
+                "created_by": "system_seed",
+                "group_slug": EXPANSION_ARTICLE_SLUG,
+            })
+            seeded += 1
+
+    if seeded or updated:
+        logging.info(f"✓ expansion-israel-5-erreurs: {seeded} created, {updated} content updated")
+    else:
+        logging.info("✓ expansion-israel-5-erreurs already up-to-date")
 
 
 @api_router.post("/admin/migrate-blog")

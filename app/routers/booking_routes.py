@@ -159,53 +159,29 @@ class BookingRequest(BaseModel):
     topic: Optional[str] = "audit"
 
 
-@router.post("/book")
-async def create_booking(body: BookingRequest):
+async def _create_booking_event(
+    start_dt: "datetime",
+    end_dt:   "datetime",
+    email:    str,
+    name:     Optional[str] = None,
+    phone:    Optional[str] = None,
+    topic:    str = "audit",
+) -> dict:
     """
-    Create a Google Calendar event with a Google Meet link (OAuth user credentials).
-    Returns { eventId, meetLink, htmlLink, start, end }.
+    Core booking logic — reusable by the HTTP endpoint AND by the Tranzilla webhook.
+    Creates a Google Calendar event with Meet link, sends confirmation email.
+    Returns {eventId, meetLink, htmlLink, start, end}.
+    Raises HTTPException on critical failures (slot taken, calendar unavailable).
     """
-    # Step 1: Parse datetime (fast, no I/O)
-    try:
-        start_dt = datetime.fromisoformat(body.start)
-        end_dt   = datetime.fromisoformat(body.end)
-    except ValueError:
-        raise HTTPException(422, "start/end must be ISO 8601 datetime strings.")
-
-    # Step 2: 48h business rule guard — BEFORE Google Calendar check (anti-bypass)
-    tz_j     = ZoneInfo(_BOOKING_TZ)
-    now_tz   = datetime.now(tz_j)
-    if start_dt.tzinfo is None:
-        # Naive datetime: assume BOOKING_TZ (document assumption in log)
-        start_dt = start_dt.replace(tzinfo=tz_j)
-        logger.warning(
-            f"[booking] start_time '{body.start}' had no timezone info; "
-            f"assumed {_BOOKING_TZ}"
-        )
-    threshold_48h = now_tz + timedelta(hours=_HARD_MIN_NOTICE_HOURS)
-    if start_dt.astimezone(tz_j) < threshold_48h:
-        logger.warning(
-            f"[booking] REFUSED: slot {start_dt.isoformat()} < 48h threshold "
-            f"({threshold_48h.isoformat()}) requested by {body.email}"
-        )
-        raise HTTPException(
-            400,
-            "Ce cr\u00e9neau n'est pas r\u00e9servable : d\u00e9lai minimum 48h."
-        )
-
-    # Step 3: Google Calendar connectivity
     if not await get_connection_status():
-        raise HTTPException(
-            503,
-            "Google Calendar not connected. L'admin doit connecter Google Agenda.",
-        )
+        raise HTTPException(503, "Google Calendar not connected.")
 
+    utc             = ZoneInfo("UTC")
+    attendee_name   = name or email.split("@")[0]
+    service         = await build_calendar_service()
 
-    utc = ZoneInfo("UTC")
-
-    # Re-verify the slot is still free
+    # Re-verify the slot is still free (race condition guard)
     try:
-        service = await build_calendar_service()
         fb = service.freebusy().query(body={
             "timeMin":  start_dt.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "timeMax":  end_dt.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -220,20 +196,18 @@ async def create_booking(body: BookingRequest):
     except Exception as exc:
         logger.warning(f"[booking] pre-book freebusy check failed (non-fatal): {exc}")
 
-    attendee_name = body.name or body.email.split("@")[0]
-
     event_body = {
         "summary": "Audit IGV – Implantation en Israël",
         "description": (
             f"Client : {attendee_name}\n"
-            f"Email  : {body.email}\n"
-            + (f"Tél.   : {body.phone}\n" if body.phone else "")
-            + f"Sujet  : {body.topic or 'audit'}\n"
+            f"Email  : {email}\n"
+            + (f"Tél.   : {phone}\n" if phone else "")
+            + f"Sujet  : {topic}\n"
             + "Paiement confirmé."
         ),
         "start": {"dateTime": start_dt.isoformat(), "timeZone": _BOOKING_TZ},
         "end":   {"dateTime": end_dt.isoformat(),   "timeZone": _BOOKING_TZ},
-        "attendees": [{"email": body.email, "displayName": attendee_name}],
+        "attendees": [{"email": email, "displayName": attendee_name}],
         "conferenceData": {
             "createRequest": {
                 "requestId": str(uuid.uuid4()),
@@ -260,13 +234,11 @@ async def create_booking(body: BookingRequest):
                .get("uri", "")
     ) or created.get("htmlLink", "")
 
-    start_formatted = start_dt.strftime("%d/%m/%Y à %H:%M")
-
     try:
         await _send_booking_confirmation(
-            to_email=body.email,
+            to_email=email,
             name=attendee_name,
-            start_fmt=start_formatted,
+            start_fmt=start_dt.strftime("%d/%m/%Y à %H:%M"),
             meet_link=meet_link,
         )
     except Exception as mail_exc:
@@ -279,6 +251,48 @@ async def create_booking(body: BookingRequest):
         "start":    created["start"]["dateTime"],
         "end":      created["end"]["dateTime"],
     }
+
+
+@router.post("/book")
+async def create_booking(body: BookingRequest):
+    """
+    Create a Google Calendar event with a Google Meet link.
+    For audit packs, this endpoint is invoked automatically by the Tranzilla webhook
+    after payment confirmation. Direct UI calls go through /payment tunnel instead.
+    Returns { eventId, meetLink, htmlLink, start, end }.
+    """
+    # Step 1: Parse datetime
+    try:
+        start_dt = datetime.fromisoformat(body.start)
+        end_dt   = datetime.fromisoformat(body.end)
+    except ValueError:
+        raise HTTPException(422, "start/end must be ISO 8601 datetime strings.")
+
+    # Step 2: 48h business rule guard — BEFORE Google Calendar check
+    tz_j     = ZoneInfo(_BOOKING_TZ)
+    now_tz   = datetime.now(tz_j)
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=tz_j)
+        logger.warning(
+            f"[booking] start_time '{body.start}' had no timezone info; assumed {_BOOKING_TZ}"
+        )
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=tz_j)
+    threshold_48h = now_tz + timedelta(hours=_HARD_MIN_NOTICE_HOURS)
+    if start_dt.astimezone(tz_j) < threshold_48h:
+        raise HTTPException(
+            400,
+            "Ce créneau n'est pas réservable : délai minimum 48h."
+        )
+
+    return await _create_booking_event(
+        start_dt=start_dt,
+        end_dt=end_dt,
+        email=body.email,
+        name=body.name,
+        phone=body.phone,
+        topic=body.topic or "audit",
+    )
 
 
 # ── Confirmation email ───────────────────────────────────────────────────────

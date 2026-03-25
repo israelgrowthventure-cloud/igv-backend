@@ -121,11 +121,11 @@ class Invoice(BaseModel):
 
 
 class Payment(BaseModel):
-    """Payment record (including Monetico)"""
-    
+    """Payment record"""
+
     # Payment Info
     payment_id: str  # Internal ID
-    payment_provider: str = "monetico"  # monetico, stripe, manual
+    payment_provider: str = "tranzilla"  # tranzilla, manual
     provider_transaction_id: Optional[str] = None
     
     # Amount
