@@ -90,7 +90,6 @@ except Exception as e:
 
 # New routers with error handling
 INVOICE_ROUTER_ERROR = None
-MONETICO_ROUTER_ERROR = None
 
 try:
     from app.routers.payments.invoice_routes import router as invoice_router
@@ -102,15 +101,16 @@ except Exception as e:
     INVOICE_ROUTER_LOADED = False
     invoice_router = None
 
+TRANZILLA_ROUTER_ERROR = None
 try:
-    from app.routers.payments.monetico_routes import router as monetico_router
-    MONETICO_ROUTER_LOADED = True
-    logging.info("✓ Monetico router loaded successfully")
+    from app.routers.payments.tranzilla_routes import router as tranzilla_router
+    TRANZILLA_ROUTER_LOADED = True
+    logging.info("✓ Tranzilla router loaded successfully")
 except Exception as e:
-    MONETICO_ROUTER_ERROR = f"{type(e).__name__}: {str(e)}"
-    logging.error(f"✗ Failed to load monetico_routes: {MONETICO_ROUTER_ERROR}")
-    MONETICO_ROUTER_LOADED = False
-    monetico_router = None
+    TRANZILLA_ROUTER_ERROR = f"{type(e).__name__}: {str(e)}"
+    logging.error(f"✗ Failed to load tranzilla_routes: {TRANZILLA_ROUTER_ERROR}")
+    TRANZILLA_ROUTER_LOADED = False
+    tranzilla_router = None
 
 PAYMENT_ROUTER_ERROR = None
 try:
@@ -1137,11 +1137,11 @@ if INVOICE_ROUTER_LOADED and invoice_router:
 else:
     logging.warning("✗ Invoice router not registered (import failed)")
 
-if MONETICO_ROUTER_LOADED and monetico_router:
-    app.include_router(monetico_router)  # Monetico Payment Integration
-    logging.info("✓ Monetico router registered")
+if TRANZILLA_ROUTER_LOADED and tranzilla_router:
+    app.include_router(tranzilla_router)  # Tranzilla Payment Integration
+    logging.info("✓ Tranzilla router registered")
 else:
-    logging.warning("✗ Monetico router not registered (import failed)")
+    logging.warning("✗ Tranzilla router not registered (import failed)")
 
 if PAYMENT_ROUTER_LOADED and payment_router:
     app.include_router(payment_router)  # Payoneer Payment Sessions
