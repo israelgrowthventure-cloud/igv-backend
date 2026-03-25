@@ -227,7 +227,7 @@ async def init_payment(req: InitPaymentRequest):
         "lang":        tranzilla_language,
     }
 
-    create_token_url = f"https://direct.tranzila.com/{_ACTIVE_TERMINAL}/createToken.php"
+    create_token_url = "https://secure5.tranzilla.co.il/cgi-bin/tranzilla71u.cgi"
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
