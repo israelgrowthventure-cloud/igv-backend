@@ -4,7 +4,7 @@ Terminal: fxpigv148 | Supplier: 0070698
 Production-ready: hosted payment page, webhook notification, payment tracking
 """
 
-VERSION = "5.1-PROD"
+VERSION = "6.0-METHOD-B"
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -17,6 +17,7 @@ import os
 import logging
 import jwt
 import uuid
+import httpx
 from bson import ObjectId
 
 router = APIRouter(prefix="/api/tranzilla")
@@ -79,12 +80,17 @@ TRANZILLA_SUCCESS_URL   = os.getenv('TRANZILLA_SUCCESS_URL', f"{SITE_URL}/paymen
 TRANZILLA_FAIL_URL      = os.getenv('TRANZILLA_FAIL_URL', f"{SITE_URL}/payment/failure")
 TRANZILLA_NOTIFY_URL    = os.getenv('TRANZILLA_NOTIFY_URL', f"{BACKEND_URL}/api/tranzilla/notify")
 
-TRANZILLA_CONFIGURED = bool(TRANZILLA_TERMINAL and TRANZILLA_PW)
+# Method B: prefer dedicated token credentials; fall back to main credentials.
+# Both sets are server-side only — the password is NEVER sent to the browser.
+_ACTIVE_TERMINAL = TRANZILLA_TOKEN_TERMINAL or TRANZILLA_TERMINAL
+_ACTIVE_PW       = TRANZILLA_TOKEN_PW       or TRANZILLA_PW
+
+TRANZILLA_CONFIGURED = bool(_ACTIVE_TERMINAL and _ACTIVE_PW)
 
 if TRANZILLA_CONFIGURED:
-    logging.info(f"✅ Tranzilla configured — terminal: {TRANZILLA_TERMINAL}")
+    logging.info(f"✅ Tranzilla Method B configured — terminal: {_ACTIVE_TERMINAL}")
 else:
-    logging.warning("⚠️ Tranzilla not fully configured")
+    logging.warning("⚠️ Tranzilla not fully configured (set TRANZILLA_TERMINAL + TRANZILLA_PW)")
 
 
 # ──────────────────────────────────────────
@@ -199,28 +205,79 @@ async def init_payment(req: InitPaymentRequest):
         except Exception as e:
             logging.warning(f"Could not save payment record: {e}")
 
-    # Build Tranzilla hosted page URL
-    params = {
-        "supplier":      TRANZILLA_TERMINAL,
-        "TranzilaPW":   TRANZILLA_PW,
-        "sum":           f"{req.amount:.2f}",
-        "currency":      str(currency_to_tranzilla(req.currency)),
-        "cred_type":     "1",          # Regular credit card
-        "tranmode":      "A",          # Charge immediately
-        "contact":       req.customer_name or "Client IGV",
-        "email":         req.customer_email or "",
-        "noorder":       reference,
-        "pdesc":         req.pack_name[:50],  # max 50 chars
-        "success_url":   TRANZILLA_SUCCESS_URL,
-        "fail_url":      TRANZILLA_FAIL_URL,
-        "notify_url":    TRANZILLA_NOTIFY_URL,
+    # ── Method B: Server-to-Server session token ──────────────────────────────
+    # TranzilaPW is used only in this server-to-server POST — it is NEVER
+    # included in any URL or response that reaches the browser.
+    tranzilla_language = tranzilla_lang(req.language)
+
+    token_params = {
+        "supplier":    _ACTIVE_TERMINAL,
+        "TranzilaPW": _ACTIVE_PW,       # stays server-side
+        "sum":         f"{req.amount:.2f}",
+        "currency":    str(currency_to_tranzilla(req.currency)),
+        "cred_type":   "1",             # Regular credit card
+        "tranmode":    "A",             # Charge immediately
+        "contact":     req.customer_name or "Client IGV",
+        "email":       req.customer_email or "",
+        "noorder":     reference,
+        "pdesc":       req.pack_name[:50],
+        "success_url": TRANZILLA_SUCCESS_URL,
+        "fail_url":    TRANZILLA_FAIL_URL,
+        "notify_url":  TRANZILLA_NOTIFY_URL,
+        "lang":        tranzilla_language,
     }
 
-    # Use the requested language (with fallback to English)
-    tranzilla_language = tranzilla_lang(req.language)
-    payment_url = f"{TRANZILLA_ENDPOINT}?{urlencode(params, quote_via=quote)}&lang={tranzilla_language}"
+    create_token_url = f"https://direct.tranzila.com/{_ACTIVE_TERMINAL}/createToken.php"
 
-    logging.info(f"[Tranzilla] Payment initiated — ref: {reference} | lang: {tranzilla_language} | amount: {req.amount} {req.currency}")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(create_token_url, data=token_params)
+            resp.raise_for_status()
+            token_data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        logging.error(f"[Tranzilla] createToken HTTP error {exc.response.status_code} — ref: {reference}")
+        raise HTTPException(
+            status_code=502,
+            detail="Payment gateway returned an error. Please try again or contact support."
+        )
+    except Exception as exc:
+        logging.error(f"[Tranzilla] createToken call failed — ref: {reference} | err: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail="Payment gateway unavailable. Please try again or contact support."
+        )
+
+    resp_code = str(token_data.get("RespCode", "")).strip()
+    if resp_code != "000":
+        logging.error(f"[Tranzilla] createToken rejected — code: {resp_code} | ref: {reference}")
+        if db is not None:
+            try:
+                await db.payments.update_one(
+                    {"payment_id": reference},
+                    {"$set": {"status": "FAILED", "updated_at": datetime.now(timezone.utc)}}
+                )
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=502,
+            detail=f"Payment session rejected (code {resp_code}). Please contact support."
+        )
+
+    tranz_token = token_data.get("TranzToken", "").strip()
+    if not tranz_token:
+        logging.error(f"[Tranzilla] createToken returned no TranzToken — ref: {reference} | raw: {token_data}")
+        raise HTTPException(
+            status_code=502,
+            detail="Invalid payment session response. Please contact support."
+        )
+
+    # Clean redirect URL — TranzilaPW is NOT present anywhere in this URL
+    payment_url = f"https://direct.tranzila.com/{_ACTIVE_TERMINAL}/iframenew.php?TranzToken={tranz_token}"
+
+    logging.info(
+        f"[Tranzilla] Method B token created — ref: {reference} | "
+        f"lang: {tranzilla_language} | amount: {req.amount} {req.currency}"
+    )
 
     return {
         "payment_url": payment_url,
