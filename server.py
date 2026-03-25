@@ -1111,6 +1111,9 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_db_init():
     """Create MongoDB indexes for performance on startup"""
+    from app.routers.payments.tranzilla_routes import VERSION as TRANZILLA_VERSION
+    print(f"🚀 IGV BACKEND STARTED — TRANZILLA {TRANZILLA_VERSION}", flush=True)
+    logging.info(f"🚀 IGV BACKEND STARTED — TRANZILLA {TRANZILLA_VERSION}")
     db_connected = await verify_mongodb_connection()
     if not db_connected:
         logging.warning("⚠️ Skipping DB init")

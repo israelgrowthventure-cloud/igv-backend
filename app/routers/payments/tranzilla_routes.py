@@ -4,6 +4,8 @@ Terminal: fxpigv148 | Supplier: 0070698
 Production-ready: hosted payment page, webhook notification, payment tracking
 """
 
+VERSION = "5.0-DEBUG-FORCE-HE"
+
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
@@ -212,12 +214,14 @@ async def init_payment(req: InitPaymentRequest):
         "success_url":   TRANZILLA_SUCCESS_URL,
         "fail_url":      TRANZILLA_FAIL_URL,
         "notify_url":    TRANZILLA_NOTIFY_URL,
-        "lang":          tranzilla_lang(req.language),
     }
 
-    payment_url = f"{TRANZILLA_ENDPOINT}?{urlencode(params, quote_via=quote)}"
+    # FORCE BRUTALE — lang=he écrit en dur, jamais via fonction (v5.0-DEBUG-FORCE-HE)
+    payment_url = f"{TRANZILLA_ENDPOINT}?{urlencode(params, quote_via=quote)}&lang=he"
 
-    logging.info(f"✅ Tranzilla payment initiated — ref: {reference} | amount: {req.amount} {req.currency}")
+    print(f"🔍 DEBUG [{VERSION}] Tranzilla URL: {payment_url}", flush=True)
+    logging.info(f"🔍 DEBUG [{VERSION}] Tranzilla URL: {payment_url}")
+    logging.info(f"🔍 DEBUG req.language reçu du frontend: '{req.language}'")
 
     return {
         "payment_url": payment_url,
