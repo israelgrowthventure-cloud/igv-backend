@@ -4,7 +4,7 @@ Terminal: fxpigv148 | Supplier: 0070698
 Production-ready: hosted payment page, webhook notification, payment tracking
 """
 
-VERSION = "7.0-CHECKOUT-POST"
+VERSION = "7.1-CHECKOUT-POST-NO-LANG"
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -101,11 +101,6 @@ def currency_to_tranzilla(currency_code: str) -> int:
 def tranzilla_to_currency(code: int) -> str:
     reverse = {v: k for k, v in CURRENCY_MAP.items()}
     return reverse.get(code, 'EUR')
-
-
-def tranzilla_lang(language: str) -> str:
-    """Terminal fxpigv148 supports he only — force he regardless of UI language."""
-    return 'he'
 
 
 # ──────────────────────────────────────────
@@ -233,7 +228,6 @@ async def checkout(reference: str):
     customer_name = payment_doc.get("client_name") or "Client IGV"
     customer_email = payment_doc.get("client_email") or ""
     pack_name = (payment_doc.get("pack_name") or "Audit IGV")[:50]
-    language = tranzilla_lang(payment_doc.get("language", "fr"))
 
     tranzilla_action = f"https://direct.tranzila.com/{TRANZILLA_TERMINAL}/iframenew.php"
 
@@ -251,7 +245,6 @@ async def checkout(reference: str):
         "success_url": TRANZILLA_SUCCESS_URL,
         "fail_url": TRANZILLA_FAIL_URL,
         "notify_url": TRANZILLA_NOTIFY_URL,
-        "lang": language,
     }
 
     inputs_html = "\n".join(
