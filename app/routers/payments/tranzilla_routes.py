@@ -65,12 +65,9 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
 # ──────────────────────────────────────────
 # TRANZILLA CONFIGURATION
 # ──────────────────────────────────────────
-TRANZILLA_TERMINAL       = os.getenv('TRANZILLA_TERMINAL')
-TRANZILLA_PW             = os.getenv('TRANZILLA_PW')
-TRANZILLA_SUPPLIER_CODE  = os.getenv('TRANZILLA_SUPPLIER_CODE')
-TRANZILLA_API_PASSWORD   = os.getenv('TRANZILLA_API_PASSWORD')   # refunds
-TRANZILLA_TOKEN_TERMINAL = os.getenv('TRANZILLA_TOKEN_TERMINAL')
-TRANZILLA_TOKEN_PW       = os.getenv('TRANZILLA_TOKEN_PW')
+TRANZILLA_TERMINAL      = os.getenv('TRANZILLA_TERMINAL')
+TRANZILLA_PW            = os.getenv('TRANZILLA_PW')
+TRANZILLA_API_PASSWORD  = os.getenv('TRANZILLA_API_PASSWORD')   # refunds uniquement
 
 SITE_URL    = os.getenv('SITE_URL', 'https://israelgrowthventure.com')
 BACKEND_URL = os.getenv('BACKEND_URL', 'https://igv-cms-backend.onrender.com')
