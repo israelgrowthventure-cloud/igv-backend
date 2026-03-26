@@ -26,7 +26,7 @@ security = HTTPBearer()
 # ──────────────────────────────────────────
 # MongoDB
 # ──────────────────────────────────────────
-_mongo_url = os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+_mongo_url = os.getenv('MONGODB_URL') or os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
 _db_name = os.getenv('DB_NAME', 'igv_production')
 _mongo_client = None
 _db = None
@@ -199,23 +199,6 @@ async def init_payment(req: InitPaymentRequest):
             await db.payments.insert_one(payment_doc)
         except Exception as e:
             logging.warning(f"Could not save payment record: {e}")
-
-    # Build Tranzilla hosted page URL
-    params = {
-        "supplier":      TRANZILLA_TERMINAL,
-        "TranzilaPW":   TRANZILLA_PW,
-        "sum":           f"{req.amount:.2f}",
-        "currency":      str(currency_to_tranzilla(req.currency)),
-        "cred_type":     "1",          # Regular credit card
-        "tranmode":      "A",          # Charge immediately
-        "contact":       req.customer_name or "Client IGV",
-        "email":         req.customer_email or "",
-        "noorder":       reference,
-        "pdesc":         req.pack_name[:50],  # max 50 chars
-        "success_url":   TRANZILLA_SUCCESS_URL,
-        "fail_url":      TRANZILLA_FAIL_URL,
-        "notify_url":    TRANZILLA_NOTIFY_URL,
-    }
 
     logging.info(f"[tranzilla] Payment initiated — ref: {reference} | pack: {req.pack_id} | {req.amount} {req.currency}")
 
