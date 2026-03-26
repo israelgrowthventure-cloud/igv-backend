@@ -7,6 +7,7 @@ Production-ready: hosted payment page, webhook notification, payment tracking
 VERSION = "5.0-DEBUG-FORCE-HE"
 
 from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -216,18 +217,63 @@ async def init_payment(req: InitPaymentRequest):
         "notify_url":    TRANZILLA_NOTIFY_URL,
     }
 
-    # FORCE BRUTALE — lang=he écrit en dur, jamais via fonction (v5.0-DEBUG-FORCE-HE)
-    payment_url = f"{TRANZILLA_ENDPOINT}?{urlencode(params, quote_via=quote)}&lang=he"
-
-    print(f"🔍 DEBUG [{VERSION}] Tranzilla URL: {payment_url}", flush=True)
-    logging.info(f"🔍 DEBUG [{VERSION}] Tranzilla URL: {payment_url}")
-    logging.info(f"🔍 DEBUG req.language reçu du frontend: '{req.language}'")
+    logging.info(f"[tranzilla] Payment initiated — ref: {reference} | pack: {req.pack_id} | {req.amount} {req.currency}")
 
     return {
-        "payment_url": payment_url,
         "reference": reference,
         "provider": "tranzilla",
     }
+
+
+@router.get("/checkout/{reference}")
+async def checkout_redirect(reference: str):
+    """
+    Server-side checkout: auto-submits a POST form to Tranzilla.
+    TranzilaPW is sent in the POST body — never exposed in any URL.
+    """
+    if not TRANZILLA_CONFIGURED:
+        raise HTTPException(status_code=500, detail="Payment gateway not configured")
+
+    db = get_db()
+    doc = None
+    if db is not None:
+        try:
+            doc = await db.payments.find_one({"payment_id": reference, "status": "INITIATED"})
+        except Exception as e:
+            logging.warning(f"[tranzilla] DB lookup failed for checkout {reference}: {e}")
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Session de paiement introuvable ou déjà traitée")
+
+    fields = [
+        ("supplier",    TRANZILLA_TERMINAL),
+        ("TranzilaPW", TRANZILLA_PW),
+        ("sum",         f"{doc['amount']:.2f}"),
+        ("currency",    str(currency_to_tranzilla(doc["currency"]))),
+        ("cred_type",   "1"),
+        ("tranmode",    "A"),
+        ("contact",     doc.get("client_name", "Client IGV")),
+        ("email",       doc.get("client_email", "")),
+        ("noorder",     reference),
+        ("pdesc",       doc.get("pack_name", "")[:50]),
+        ("success_url", TRANZILLA_SUCCESS_URL),
+        ("fail_url",    TRANZILLA_FAIL_URL),
+        ("notify_url",  TRANZILLA_NOTIFY_URL),
+        ("lang",        "he"),
+    ]
+    inputs = "\n".join(
+        f'<input type="hidden" name="{k}" value="{v}">' for k, v in fields
+    )
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Redirection vers le paiement\u2026</title>
+</head><body>
+<form id="pf" method="POST" action="{TRANZILLA_ENDPOINT}">{inputs}</form>
+<script>document.getElementById('pf').submit();</script>
+</body></html>"""
+
+    logging.info(f"[tranzilla] Checkout form served — ref: {reference}")
+    return HTMLResponse(content=html)
 
 
 # ──────────────────────────────────────────
