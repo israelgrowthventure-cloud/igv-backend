@@ -1247,13 +1247,121 @@ async def delete_tag(tag_id: str, user: Dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_DEFAULT_PIPELINE_STAGES = [
+    {"id": "qualification", "name": "Qualification", "order": 0, "color": "#3B82F6", "probability": 10},
+    {"id": "proposal", "name": "Proposition", "order": 1, "color": "#F59E0B", "probability": 30},
+    {"id": "negotiation", "name": "Négociation", "order": 2, "color": "#8B5CF6", "probability": 60},
+    {"id": "closed_won", "name": "Gagné", "order": 3, "color": "#10B981", "probability": 100},
+    {"id": "closed_lost", "name": "Perdu", "order": 4, "color": "#EF4444", "probability": 0},
+]
+
+
+async def _load_pipeline_stages(db) -> list:
+    """Load stages from DB or return defaults."""
+    try:
+        setting = await db.settings.find_one({"key": "pipeline_stages"})
+        if setting:
+            val = setting["value"]
+            return val if isinstance(val, list) else list(val)
+    except Exception:
+        pass
+    return [dict(s) for s in _DEFAULT_PIPELINE_STAGES]
+
+
+async def _save_pipeline_stages(db, stages: list):
+    await db.settings.update_one(
+        {"key": "pipeline_stages"},
+        {"$set": {"key": "pipeline_stages", "value": stages, "updated_at": datetime.now(timezone.utc)}},
+        upsert=True
+    )
+
+
 @router.get("/settings/pipeline-stages")
 async def get_pipeline_stages(user: Dict = Depends(get_current_user)):
     """Get available pipeline stages"""
-    return {
-        "success": True,
-        "data": ["qualification", "proposal", "negotiation", "closed_won", "closed_lost"]
-    }
+    current_db = get_db()
+    if current_db is None:
+        return {"success": True, "stages": _DEFAULT_PIPELINE_STAGES}
+    try:
+        stages = await _load_pipeline_stages(current_db)
+        return {"success": True, "stages": stages}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings/pipeline-stages")
+async def create_pipeline_stage(data: Dict = Body(...), user: Dict = Depends(get_current_user)):
+    """Add a new pipeline stage"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    stage_id = data.get("id", "").strip()
+    name = data.get("name", "").strip()
+    if not stage_id or not name:
+        raise HTTPException(status_code=400, detail="id and name are required")
+    try:
+        stages = await _load_pipeline_stages(current_db)
+        if any(s["id"] == stage_id for s in stages):
+            raise HTTPException(status_code=400, detail="Stage id already exists")
+        new_stage = {
+            "id": stage_id,
+            "name": name,
+            "order": data.get("order", len(stages)),
+            "color": data.get("color", "#3B82F6"),
+            "probability": data.get("probability", 0),
+        }
+        stages.append(new_stage)
+        await _save_pipeline_stages(current_db, stages)
+        return {"success": True, "stages": stages}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/settings/pipeline-stages/{stage_id}")
+async def update_pipeline_stage(stage_id: str, data: Dict = Body(...), user: Dict = Depends(get_current_user)):
+    """Update a pipeline stage"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        stages = await _load_pipeline_stages(current_db)
+        found = False
+        for stage in stages:
+            if stage["id"] == stage_id:
+                for field in ("name", "order", "color", "probability"):
+                    if field in data:
+                        stage[field] = data[field]
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail="Stage not found")
+        await _save_pipeline_stages(current_db, stages)
+        return {"success": True, "stages": stages}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/settings/pipeline-stages/{stage_id}")
+async def delete_pipeline_stage(stage_id: str, user: Dict = Depends(get_current_user)):
+    """Delete a pipeline stage"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        stages = await _load_pipeline_stages(current_db)
+        new_stages = [s for s in stages if s["id"] != stage_id]
+        if len(new_stages) == len(stages):
+            raise HTTPException(status_code=404, detail="Stage not found")
+        await _save_pipeline_stages(current_db, new_stages)
+        return {"success": True, "stages": new_stages}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/settings/quality")
