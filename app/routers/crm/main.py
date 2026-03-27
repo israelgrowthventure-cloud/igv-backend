@@ -629,6 +629,37 @@ async def delete_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], 
     return {"message": "Lead deleted successfully"}
 
 
+@router.post("/leads/bulk-delete")
+async def bulk_delete_leads(data: Dict = Body(...), user: Dict = Depends(require_admin)):
+    """Delete multiple leads at once (admin only)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    lead_ids = data.get("lead_ids", [])
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+    try:
+        object_ids = [ObjectId(lid) for lid in lead_ids if lid and len(str(lid)) == 24]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid lead ID format")
+    if not object_ids:
+        raise HTTPException(status_code=400, detail="No valid lead IDs")
+    try:
+        result = await current_db.leads.delete_many({"_id": {"$in": object_ids}})
+        await log_audit_event(
+            current_db,
+            user_id=user["id"],
+            user_email=user["email"],
+            action="leads_bulk_deleted",
+            resource_type="lead",
+            resource_id="bulk",
+            details={"count": result.deleted_count, "ids": lead_ids}
+        )
+        return {"success": True, "deleted_count": result.deleted_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==========================================
 # LEAD ACTIVITIES (from crm_missing_routes + crm_additional_routes)
 # ==========================================
@@ -1094,7 +1125,27 @@ async def create_email_draft(draft_data: EmailDraftCreate, user: Dict = Depends(
         result = await current_db.email_drafts.insert_one(new_draft)
         
         return {"message": "Draft created successfully", "draft_id": str(result.inserted_id)}
-        
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/drafts/{draft_id}")
+async def delete_email_draft(draft_id: str, user: Dict = Depends(get_current_user)):
+    """Delete an email draft"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.email_drafts.delete_one({
+            "_id": ObjectId(draft_id),
+            "created_by": user["email"]
+        })
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Draft not found")
+        return {"success": True, "message": "Draft deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
