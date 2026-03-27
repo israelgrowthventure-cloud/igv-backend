@@ -4,21 +4,21 @@ Terminal: fxpigv148 | Supplier: 0070698
 Production-ready: hosted payment page, webhook notification, payment tracking
 """
 
-VERSION = "5.0-DEBUG-FORCE-HE"
+VERSION = "7.1-CHECKOUT-POST-NO-LANG"
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
-from urllib.parse import urlencode, quote
+from zoneinfo import ZoneInfo
 import os
 import logging
 import jwt
 import uuid
-from bson import ObjectId
+import html
 
 router = APIRouter(prefix="/api/tranzilla")
 security = HTTPBearer()
@@ -65,30 +65,27 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
 # ──────────────────────────────────────────
 # TRANZILLA CONFIGURATION
 # ──────────────────────────────────────────
-TRANZILLA_TERMINAL      = os.getenv('TRANZILLA_TERMINAL')
-TRANZILLA_PW            = os.getenv('TRANZILLA_PW')
-TRANZILLA_API_PASSWORD  = os.getenv('TRANZILLA_API_PASSWORD')   # refunds uniquement
+TRANZILLA_TERMINAL = os.getenv('TRANZILLA_TERMINAL')
+TRANZILLA_PW = os.getenv('TRANZILLA_PW')
 
-SITE_URL    = os.getenv('SITE_URL', 'https://israelgrowthventure.com')
+SITE_URL = os.getenv('SITE_URL', 'https://israelgrowthventure.com')
 BACKEND_URL = os.getenv('BACKEND_URL', 'https://igv-cms-backend.onrender.com')
 
-TRANZILLA_ENDPOINT      = f"https://direct.tranzila.com/{TRANZILLA_TERMINAL}/iframenew.php"
-TRANZILLA_SUCCESS_URL   = os.getenv('TRANZILLA_SUCCESS_URL', f"{SITE_URL}/payment/return")
-TRANZILLA_FAIL_URL      = os.getenv('TRANZILLA_FAIL_URL', f"{SITE_URL}/payment/failure")
-TRANZILLA_NOTIFY_URL    = os.getenv('TRANZILLA_NOTIFY_URL', f"{BACKEND_URL}/api/tranzilla/notify")
+TRANZILLA_SUCCESS_URL = os.getenv('TRANZILLA_SUCCESS_URL', f"{SITE_URL}/payment/success")
+TRANZILLA_FAIL_URL = os.getenv('TRANZILLA_FAIL_URL', f"{SITE_URL}/payment/failure")
+TRANZILLA_NOTIFY_URL = os.getenv('TRANZILLA_NOTIFY_URL', f"{BACKEND_URL}/api/tranzilla/notify")
 
 TRANZILLA_CONFIGURED = bool(TRANZILLA_TERMINAL and TRANZILLA_PW)
 
 if TRANZILLA_CONFIGURED:
     logging.info(f"✅ Tranzilla configured — terminal: {TRANZILLA_TERMINAL}")
 else:
-    logging.warning("⚠️ Tranzilla not fully configured")
+    logging.warning("⚠️ Tranzilla not fully configured (set TRANZILLA_TERMINAL + TRANZILLA_PW)")
 
 
 # ──────────────────────────────────────────
 # CURRENCY HELPERS
 # ──────────────────────────────────────────
-# Tranzilla currency codes
 CURRENCY_MAP = {
     'ILS': 1,
     'USD': 2,
@@ -98,17 +95,12 @@ CURRENCY_MAP = {
 
 
 def currency_to_tranzilla(currency_code: str) -> int:
-    return CURRENCY_MAP.get(currency_code.upper(), 978)
+    return CURRENCY_MAP.get((currency_code or 'EUR').upper(), 978)
 
 
 def tranzilla_to_currency(code: int) -> str:
     reverse = {v: k for k, v in CURRENCY_MAP.items()}
     return reverse.get(code, 'EUR')
-
-
-def tranzilla_lang(language: str) -> str:
-    """Terminal fxpigv148 supports he only — force he regardless of UI language."""
-    return 'he'
 
 
 # ──────────────────────────────────────────
@@ -123,7 +115,6 @@ class InitPaymentRequest(BaseModel):
     customer_email: Optional[str] = None
     customer_name: Optional[str] = None
     pack_type: Optional[str] = None
-    # Booking fields — only for audit pack
     booking_start: Optional[str] = None
     booking_end: Optional[str] = None
     booking_name: Optional[str] = None
@@ -133,7 +124,6 @@ class InitPaymentRequest(BaseModel):
 # ──────────────────────────────────────────
 # ENDPOINTS
 # ──────────────────────────────────────────
-
 @router.get("/config")
 async def tranzilla_config():
     """Check if Tranzilla is configured (public endpoint)."""
@@ -148,7 +138,7 @@ async def tranzilla_config():
 async def init_payment(req: InitPaymentRequest):
     """
     Initialize a Tranzilla payment session.
-    Returns a redirect URL to Tranzilla's hosted payment page.
+    Stores payment record and returns only the internal reference.
     """
     if not TRANZILLA_CONFIGURED:
         raise HTTPException(
@@ -157,11 +147,14 @@ async def init_payment(req: InitPaymentRequest):
         )
 
     db = get_db()
+    if db is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not available. Please try again later."
+        )
 
-    # Generate unique internal reference
     reference = f"IGV-{uuid.uuid4().hex[:10].upper()}"
 
-    # Store payment record in MongoDB
     payment_doc = {
         "payment_id": reference,
         "payment_provider": "tranzilla",
@@ -179,7 +172,6 @@ async def init_payment(req: InitPaymentRequest):
         "tranzilla_response_code": None,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
-        # Booking fields (audit pack only)
         "booking_start": req.booking_start,
         "booking_end": req.booking_end,
         "booking_email": req.customer_email,
@@ -191,13 +183,19 @@ async def init_payment(req: InitPaymentRequest):
         "booking_error": None,
     }
 
-    if db is not None:
-        try:
-            await db.payments.insert_one(payment_doc)
-        except Exception as e:
-            logging.warning(f"Could not save payment record: {e}")
+    try:
+        await db.payments.insert_one(payment_doc)
+    except Exception as e:
+        logging.error(f"Could not save payment record: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Could not initialize payment. Please try again."
+        )
 
-    logging.info(f"[tranzilla] Payment initiated — ref: {reference} | pack: {req.pack_id} | {req.amount} {req.currency}")
+    logging.info(
+        f"[Tranzilla] Payment initialized — ref: {reference} | "
+        f"amount: {req.amount} {req.currency} | pack: {req.pack_id}"
+    )
 
     return {
         "reference": reference,
@@ -205,55 +203,77 @@ async def init_payment(req: InitPaymentRequest):
     }
 
 
-@router.get("/checkout/{reference}")
-async def checkout_redirect(reference: str):
+@router.get("/checkout/{reference}", response_class=HTMLResponse)
+async def checkout(reference: str):
     """
-    Server-side checkout: auto-submits a POST form to Tranzilla.
-    TranzilaPW is sent in the POST body — never exposed in any URL.
+    Loads payment data from backend and returns an auto-submitting POST form to Tranzilla.
+    TranzilaPW is sent in POST body only, never in URL.
     """
     if not TRANZILLA_CONFIGURED:
-        raise HTTPException(status_code=500, detail="Payment gateway not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Tranzilla payment gateway not configured. Please contact support."
+        )
 
     db = get_db()
-    doc = None
-    if db is not None:
-        try:
-            doc = await db.payments.find_one({"payment_id": reference, "status": "INITIATED"})
-        except Exception as e:
-            logging.warning(f"[tranzilla] DB lookup failed for checkout {reference}: {e}")
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
 
-    if not doc:
-        raise HTTPException(status_code=404, detail="Session de paiement introuvable ou déjà traitée")
+    payment_doc = await db.payments.find_one({"payment_id": reference})
+    if not payment_doc:
+        raise HTTPException(status_code=404, detail="Payment not found")
 
-    fields = [
-        ("supplier",    TRANZILLA_TERMINAL),
-        ("TranzilaPW", TRANZILLA_PW),
-        ("sum",         f"{doc['amount']:.2f}"),
-        ("currency",    str(currency_to_tranzilla(doc["currency"]))),
-        ("cred_type",   "1"),
-        ("tranmode",    "A"),
-        ("contact",     doc.get("client_name", "Client IGV")),
-        ("email",       doc.get("client_email", "")),
-        ("noorder",     reference),
-        ("pdesc",       doc.get("pack_name", "")[:50]),
-        ("success_url", TRANZILLA_SUCCESS_URL),
-        ("fail_url",    TRANZILLA_FAIL_URL),
-        ("notify_url",  TRANZILLA_NOTIFY_URL),
-        ("lang",        "he"),
-    ]
-    inputs = "\n".join(
-        f'<input type="hidden" name="{k}" value="{v}">' for k, v in fields
+    amount = float(payment_doc.get("amount", 0))
+    currency = str(currency_to_tranzilla(payment_doc.get("currency", "EUR")))
+    customer_name = payment_doc.get("client_name") or "Client IGV"
+    customer_email = payment_doc.get("client_email") or ""
+    pack_name = (payment_doc.get("pack_name") or "Audit IGV")[:50]
+
+    tranzilla_action = f"https://direct.tranzila.com/{TRANZILLA_TERMINAL}/iframenew.php"
+
+    fields = {
+        "supplier": TRANZILLA_TERMINAL,
+        "TranzilaPW": TRANZILLA_PW,
+        "sum": f"{amount:.2f}",
+        "currency": currency,
+        "cred_type": "1",
+        "tranmode": "A",
+        "contact": customer_name,
+        "email": customer_email,
+        "noorder": reference,
+        "pdesc": pack_name,
+        "success_url": TRANZILLA_SUCCESS_URL,
+        "fail_url": TRANZILLA_FAIL_URL,
+        "notify_url": TRANZILLA_NOTIFY_URL,
+    }
+
+    inputs_html = "\n".join(
+        f'<input type="hidden" name="{html.escape(str(key), quote=True)}" value="{html.escape(str(value), quote=True)}">'
+        for key, value in fields.items()
     )
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<title>Redirection vers le paiement\u2026</title>
-</head><body>
-<form id="pf" method="POST" action="{TRANZILLA_ENDPOINT}">{inputs}</form>
-<script>document.getElementById('pf').submit();</script>
-</body></html>"""
 
-    logging.info(f"[tranzilla] Checkout form served — ref: {reference}")
-    return HTMLResponse(content=html)
+    page_html = f"""<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Redirection vers le paiement sécurisé</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <form id="tranzilla-checkout-form" method="POST" action="{html.escape(tranzilla_action, quote=True)}">
+    {inputs_html}
+    <noscript>
+      <p>Redirection vers le paiement sécurisé.</p>
+      <button type="submit">Continuer</button>
+    </noscript>
+  </form>
+  <script>
+    document.getElementById('tranzilla-checkout-form').submit();
+  </script>
+</body>
+</html>"""
+
+    return HTMLResponse(content=page_html)
 
 
 # ──────────────────────────────────────────
@@ -266,11 +286,15 @@ async def _trigger_booking_after_payment(db, noorder: str, payment_doc: dict):
     Non-fatal: logs errors, never crashes the notify webhook.
     """
     from datetime import datetime as _dt
-    from zoneinfo import ZoneInfo
-    from app.routers.booking_routes import _create_booking_event
+
+    try:
+        from app.routers.booking_routes import _create_booking_event
+    except ImportError:
+        logging.error("[tranzilla] Cannot import _create_booking_event — booking module not available")
+        return
 
     booking_start = payment_doc.get("booking_start")
-    booking_end   = payment_doc.get("booking_end")
+    booking_end = payment_doc.get("booking_end")
     booking_email = payment_doc.get("booking_email")
 
     if not (booking_start and booking_end and booking_email):
@@ -280,7 +304,8 @@ async def _trigger_booking_after_payment(db, noorder: str, payment_doc: dict):
     try:
         tz = ZoneInfo("Asia/Jerusalem")
         start_dt = _dt.fromisoformat(booking_start)
-        end_dt   = _dt.fromisoformat(booking_end)
+        end_dt = _dt.fromisoformat(booking_end)
+
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=tz)
         if end_dt.tzinfo is None:
@@ -300,9 +325,9 @@ async def _trigger_booking_after_payment(db, noorder: str, payment_doc: dict):
             {"$set": {
                 "booking_confirmed": True,
                 "booking_meet_link": result.get("meetLink"),
-                "booking_event_id":  result.get("eventId"),
-                "booking_error":     None,
-                "updated_at":        datetime.now(timezone.utc),
+                "booking_event_id": result.get("eventId"),
+                "booking_error": None,
+                "updated_at": datetime.now(timezone.utc),
             }}
         )
         logging.info(f"[tranzilla] Booking created for ref {noorder} — meetLink: {result.get('meetLink')}")
@@ -310,18 +335,17 @@ async def _trigger_booking_after_payment(db, noorder: str, payment_doc: dict):
     except Exception as exc:
         error_msg = str(exc)
         logging.error(f"[tranzilla] Booking creation failed for ref {noorder}: {error_msg}")
-        if db is not None:
-            try:
-                await db.payments.update_one(
-                    {"payment_id": noorder},
-                    {"$set": {
-                        "booking_confirmed": False,
-                        "booking_error": error_msg,
-                        "updated_at": datetime.now(timezone.utc),
-                    }}
-                )
-            except Exception:
-                pass
+        try:
+            await db.payments.update_one(
+                {"payment_id": noorder},
+                {"$set": {
+                    "booking_confirmed": False,
+                    "booking_error": error_msg,
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
+        except Exception:
+            pass
 
 
 @router.post("/notify")
@@ -332,14 +356,12 @@ async def tranzilla_notify(request: Request):
     """
     db = get_db()
 
-    # Parse form data or query params
     try:
         form = await request.form()
         data = dict(form)
     except Exception:
         data = {}
 
-    # Also check query params
     if not data:
         data = dict(request.query_params)
 
@@ -382,7 +404,6 @@ async def tranzilla_notify(request: Request):
                 {"$set": update_data}
             )
 
-            # Create timeline event
             await db.timeline_events.insert_one({
                 "entity_type": "payment",
                 "entity_id": noorder,
@@ -392,12 +413,11 @@ async def tranzilla_notify(request: Request):
                     "transaction_id": transaction_id,
                     "auth_nr": auth_nr,
                     "amount": amount_str,
-                    "currency": tranzilla_to_currency(int(currency_code) if currency_code.isdigit() else 978),
+                    "currency": tranzilla_to_currency(int(currency_code) if str(currency_code).isdigit() else 978),
                 },
                 "created_at": datetime.now(timezone.utc),
             })
 
-            # Trigger Google Calendar booking if payment succeeded
             if is_success:
                 payment_doc = await db.payments.find_one({"payment_id": noorder})
                 if payment_doc:
@@ -466,10 +486,10 @@ async def get_booking_status(reference: str):
         raise HTTPException(status_code=404, detail="Payment not found")
 
     return {
-        "payment_status":    doc.get("status"),
+        "payment_status": doc.get("status"),
         "booking_confirmed": doc.get("booking_confirmed", False),
-        "meet_link":         doc.get("booking_meet_link"),
-        "event_id":          doc.get("booking_event_id"),
-        "booking_start":     doc.get("booking_start"),
-        "booking_error":     doc.get("booking_error"),
+        "meet_link": doc.get("booking_meet_link"),
+        "event_id": doc.get("booking_event_id"),
+        "booking_start": doc.get("booking_start"),
+        "booking_error": doc.get("booking_error"),
     }

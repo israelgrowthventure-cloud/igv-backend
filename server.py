@@ -1167,6 +1167,7 @@ async def startup_db_init():
 
             # Seed new article + delete old ones
             await seed_alyah_article_if_needed(db)
+            await seed_expansion_israel_if_needed(db)
 
             # Populate expansion article content from .md files if missing
             await seed_expansion_article_if_needed(db)
@@ -1231,6 +1232,102 @@ ALYAH_ARTICLES = {
         'image_url': '/images/blog/olim-entrepreneur.webp',
     },
 }
+
+EXPANSION_ISRAEL_SLUG = 'expansion-israel-5-erreurs'
+EXPANSION_ISRAEL_ARTICLES = {
+    'fr': {
+        'title': 'Expansion en Israël : 5 Erreurs à Éviter pour les Enseignes Internationales',
+        'category': 'EXPANSION',
+        'excerpt': "Israël est un marché attractif mais exigeant. Découvrez les 5 erreurs stratégiques les plus courantes des enseignes internationales et comment les éviter.",
+        'image_url': '/images/blog/expansion-israel-5-erreurs.webp',
+    },
+    'en': {
+        'title': 'Expanding in Israel: 5 Mistakes to Avoid for International Brands',
+        'category': 'EXPANSION',
+        'excerpt': "Israel is an attractive but demanding market. Discover the 5 most common strategic mistakes international brands make and how to avoid them.",
+        'image_url': '/images/blog/expansion-israel-5-erreurs.webp',
+    },
+    'he': {
+        'title': 'התרחבות בישראל: 5 טעויות שכיחות שיש להימנע מהן עבור מותגים בינלאומיים',
+        'category': 'התרחבות',
+        'excerpt': 'ישראל היא שוק אטרקטיבי אך דורשני. גלו את 5 הטעויות האסטרטגיות הנפוצות ביותר של מותגים בינלאומיים וכיצד להימנע מהן.',
+        'image_url': '/images/blog/expansion-israel-5-erreurs.webp',
+    },
+}
+
+async def seed_expansion_israel_if_needed(db_conn):
+    """
+    Idempotent: seeds expansion-israel-5-erreurs (FR/EN/HE).
+    Reads content/blog/expansion-israel-5-erreurs.md at startup, converts to HTML,
+    and inserts or fills empty content shells. CMS-safe: never overwrites non-empty content.
+    """
+    if db_conn is None:
+        return
+
+    # Parse .md → HTML for all 3 languages
+    html_content = {}
+    md_file = Path(__file__).parent / "content" / "blog" / "expansion-israel-5-erreurs.md"
+    if md_file.exists():
+        try:
+            import markdown as _md
+            import re as _re
+            raw = md_file.read_text(encoding="utf-8")
+            headers = {
+                "fr": "# **Français**",
+                "he": "# **Hébreu**",
+                "en": "# **English**",
+            }
+            positions = {lang: raw.find(h) for lang, h in headers.items()}
+            sorted_langs = sorted(positions, key=lambda l: positions[l])
+            for i, lang in enumerate(sorted_langs):
+                start = positions[lang]
+                end = positions[sorted_langs[i + 1]] if i + 1 < len(sorted_langs) else len(raw)
+                block = raw[start:end]
+                block = _re.sub(r"^#\s+\*\*[^*]+\*\*\s*\n?", "", block, count=1)
+                html_content[lang] = _md.markdown(
+                    block.strip(), extensions=["extra", "nl2br"], output_format="html"
+                )
+        except Exception as e:
+            logging.warning(f"⚠️ Could not parse expansion-israel-5-erreurs.md: {e}")
+    else:
+        logging.warning(f"⚠️ expansion-israel-5-erreurs.md not found at {md_file}")
+
+    now = datetime.now(timezone.utc)
+    seeded = 0
+    for lang, fields in EXPANSION_ISRAEL_ARTICLES.items():
+        existing = await db_conn.blog_articles.find_one({"slug": EXPANSION_ISRAEL_SLUG, "language": lang})
+        content_html = html_content.get(lang, "")
+        if not existing:
+            await db_conn.blog_articles.insert_one({
+                "title": fields['title'],
+                "slug": EXPANSION_ISRAEL_SLUG,
+                "excerpt": fields['excerpt'],
+                "content": content_html,
+                "category": fields['category'],
+                "image_url": fields['image_url'],
+                "language": lang,
+                "published": True,
+                "tags": ["expansion", "israel", "enseignes"],
+                "author": "IGV",
+                "views": 0,
+                "created_at": now,
+                "updated_at": now,
+                "created_by": "system_seed",
+                "group_slug": EXPANSION_ISRAEL_SLUG,
+            })
+            seeded += 1
+        elif not existing.get("content") and content_html:
+            # Shell exists with empty content — fill it in (CMS-safe)
+            await db_conn.blog_articles.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"content": content_html, "updated_at": now}},
+            )
+            seeded += 1
+    if seeded:
+        logging.info(f"✓ Seeded/updated {seeded} expansion-israel-5-erreurs article(s)")
+    else:
+        logging.info("✓ expansion-israel-5-erreurs already has content")
+
 
 async def seed_alyah_article_if_needed(db_conn):
     """
