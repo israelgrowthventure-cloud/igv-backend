@@ -101,6 +101,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token has expired")
     except jwt.InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except HTTPException:
+        raise  # Re-raise 401/403 directly — do NOT convert to 500
     except Exception as e:
         logging.error(f"Auth error in get_current_user: {str(e)}")
         raise HTTPException(status_code=500, detail="Authentication failed")
@@ -143,18 +145,16 @@ async def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dic
     return user
 
 
+# All valid CRM roles recognised by the system
+VALID_CRM_ROLES = ["admin", "manager", "commercial", "support", "readonly"]
+
+
 async def get_user_or_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """
-    Dependency that allows both admin and commercial users.
-    Returns user data for filtering in route logic.
-    
-    Usage:
-        @router.get("/leads")
-        async def get_leads(user: Dict = Depends(get_user_or_admin)):
-            filter = get_user_assigned_filter(user, "leads")
-            leads = await db.leads.find(filter).to_list(100)
+    Allow any authenticated user with a recognised CRM role.
+    Role-based data filtering is handled by get_user_assigned_filter().
     """
-    await require_role(["admin", "commercial"], user)
+    await require_role(VALID_CRM_ROLES, user)
     return user
 
 
@@ -189,17 +189,16 @@ def get_user_assigned_filter(user: Dict[str, Any], entity_type: str = "leads") -
         # Returns: {"assigned_to": "commercial@example.com"}
     """
     
-    # Admin sees everything
-    if user["role"] == "admin":
+    role = user["role"]
+
+    # Admin and manager see everything
+    if role in ("admin", "manager"):
         return {}
-    
-    # Commercial sees only assigned items
-    if user["role"] == "commercial":
-        # For leads/contacts/opportunities: filter by assigned_to field
-        if entity_type in ["leads", "contacts", "opportunities"]:
+
+    # Commercial sees only their assigned items
+    if role == "commercial":
+        if entity_type in ("leads", "contacts", "opportunities"):
             return {"assigned_to": user["email"]}
-        
-        # For activities: filter by user_id or assigned leads
         if entity_type == "activities":
             return {
                 "$or": [
@@ -207,12 +206,13 @@ def get_user_assigned_filter(user: Dict[str, Any], entity_type: str = "leads") -
                     {"lead_id": {"$in": user.get("assigned_leads", [])}}
                 ]
             }
-        
-        # Default: filter by assigned_to
         return {"assigned_to": user["email"]}
-    
-    # Unknown role: deny all
-    logging.warning(f"Unknown role {user['role']} for user {user['email']}")
+
+    # Support and readonly have full read access (write restrictions at route level)
+    if role in ("support", "readonly"):
+        return {}
+
+    logging.warning(f"Unknown role {role} for user {user['email']}")
     return {"_id": {"$exists": False}}  # Matches nothing
 
 
@@ -364,5 +364,6 @@ __all__ = [
     "get_user_assigned_filter",
     "get_user_write_permission",
     "log_audit_event",
-    "security"
+    "security",
+    "VALID_CRM_ROLES",
 ]

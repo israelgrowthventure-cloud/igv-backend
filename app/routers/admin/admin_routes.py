@@ -11,10 +11,7 @@ from typing import Optional, Dict, Any
 import os
 import logging
 
-try:
-    from auth_middleware import get_current_user
-except ImportError:
-    get_current_user = None
+from auth_middleware import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/admin")
 
@@ -39,7 +36,7 @@ def get_db():
 
 
 @router.get("/stats/visits")
-async def get_visit_stats_admin(range: str = "7d"):
+async def get_visit_stats_admin(range: str = "7d", user: Dict = Depends(require_admin)):
     """
     MISSION E: Admin dashboard - Visit statistics
     
@@ -128,7 +125,7 @@ async def get_visit_stats_admin(range: str = "7d"):
 
 
 @router.get("/stats/leads")
-async def get_lead_stats_admin(range: str = "7d"):
+async def get_lead_stats_admin(range: str = "7d", user: Dict = Depends(require_admin)):
     """
     MISSION E: Admin dashboard - Lead statistics
     
@@ -215,7 +212,7 @@ async def admin_logout():
 
 
 @router.post("/process-pending")
-async def process_pending_analyses(limit: int = 10):
+async def process_pending_analyses(limit: int = 10, user: Dict = Depends(require_admin)):
     """
     MISSION: Process pending analyses (retry when quota available)
     Protected endpoint - should check admin auth in production
@@ -384,7 +381,7 @@ async def process_pending_analyses(limit: int = 10):
 
 
 @router.get("/pending-stats")
-async def get_pending_stats():
+async def get_pending_stats(user: Dict = Depends(require_admin)):
     """Get statistics on pending analyses"""
     current_db = get_db()
     
@@ -430,7 +427,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 @router.post("/users")
-async def create_user(user: UserCreate):
+async def create_user(user_data: UserCreate, _admin: Dict = Depends(require_admin)):
     """
     Create a new user
     POST /api/admin/users
@@ -441,32 +438,32 @@ async def create_user(user: UserCreate):
     
     try:
         # Check if email already exists
-        existing = await current_db.users.find_one({"email": user.email})
+        existing = await current_db.users.find_one({"email": user_data.email})
         if existing:
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
         
         # Hash password
-        hashed_password = pwd_context.hash(user.password)
+        hashed_password = pwd_context.hash(user_data.password)
         
         user_record = {
-            "email": user.email,
-            "name": user.name,
+            "email": user_data.email,
+            "name": user_data.name,
             "password": hashed_password,
-            "role": user.role,
+            "role": user_data.role,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
             "active": True
         }
         
         result = await current_db.users.insert_one(user_record)
-        logging.info(f"User created: {user.email}")
+        logging.info(f"User created: {user_data.email}")
         
         return {
             "status": "created",
             "user_id": str(result.inserted_id),
-            "email": user.email,
-            "name": user.name,
-            "role": user.role
+            "email": user_data.email,
+            "name": user_data.name,
+            "role": user_data.role
         }
     except HTTPException:
         raise
@@ -476,7 +473,7 @@ async def create_user(user: UserCreate):
 
 
 @router.get("/users")
-async def list_users():
+async def list_users(user: Dict = Depends(require_admin)):
     """
     List all users (without passwords)
     GET /api/admin/users
@@ -502,7 +499,7 @@ async def list_users():
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str):
+async def delete_user(user_id: str, _admin: Dict = Depends(require_admin)):
     """
     Delete a user
     DELETE /api/admin/users/{user_id}
@@ -545,7 +542,7 @@ class SettingsUpdate(BaseModel):
     max_leads_per_day: Optional[int] = 100
 
 @router.get("/settings")
-async def get_settings():
+async def get_settings(user: Dict = Depends(get_current_user)):
     """
     Get site settings
     GET /api/admin/settings
@@ -576,7 +573,7 @@ async def get_settings():
 
 
 @router.put("/settings")
-async def update_settings(settings: SettingsUpdate):
+async def update_settings(settings: SettingsUpdate, _admin: Dict = Depends(require_admin)):
     """
     Update site settings
     PUT /api/admin/settings

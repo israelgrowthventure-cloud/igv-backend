@@ -15,8 +15,13 @@ import csv
 import io
 import uuid
 import base64
-
 import os
+import re
+
+import aiosmtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from auth_middleware import get_current_user, require_admin, get_db
 
 logger = logging.getLogger(__name__)
@@ -25,6 +30,45 @@ logger = logging.getLogger(__name__)
 _BACKEND_URL = os.getenv('RENDER_EXTERNAL_URL') or os.getenv('BACKEND_URL', 'https://igv-cms-backend.onrender.com')
 
 router = APIRouter(prefix="/api/crm", tags=["emails-exports"])
+
+
+# ==========================================
+# SMTP HELPER
+# ==========================================
+
+async def _send_via_smtp(to_email: str, subject: str, body: str) -> bool:
+    """
+    Send email via OVH SMTP (same config as server.py send_email_gmail).
+    Returns True on success, False when SMTP is not configured (graceful degradation).
+    Raises on SMTP connection/auth errors.
+    """
+    smtp_host = os.getenv('SMTP_HOST', 'ssl0.ovh.net')
+    smtp_port = int(os.getenv('SMTP_PORT', '465'))
+    smtp_user = os.getenv('SMTP_USER', 'contact@israelgrowthventure.com')
+    smtp_password = os.getenv('SMTP_PASSWORD')
+    smtp_from = os.getenv('SMTP_FROM', 'contact@israelgrowthventure.com')
+
+    if not smtp_password:
+        logger.warning("SMTP_PASSWORD not configured — email stored but not sent via SMTP")
+        return False
+
+    message = MIMEMultipart('alternative')
+    message['Subject'] = subject
+    message['From'] = f"Israel Growth Venture <{smtp_from}>"
+    message['To'] = to_email
+    message['Reply-To'] = smtp_from
+
+    message.attach(MIMEText(body, 'html'))
+
+    await aiosmtplib.send(
+        message,
+        hostname=smtp_host,
+        port=smtp_port,
+        username=smtp_user,
+        password=smtp_password,
+        use_tls=True,
+    )
+    return True
 
 
 # ==========================================
@@ -45,7 +89,7 @@ async def send_email_advanced(
     email_data: {
         "to": "recipient@example.com",
         "subject": "Subject",
-        "body": "HTML body",
+        "body": "HTML body",           (also accepts "message" for backward compat)
         "lead_id": "optional",
         "contact_id": "optional",
         "attachments": [{"name": "file.pdf", "content": "base64...", "mime_type": "application/pdf"}],
@@ -58,9 +102,10 @@ async def send_email_advanced(
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
-        to_email = email_data.get("to")
+        # Accept both canonical (to/body) and legacy (to_email/message) field names
+        to_email = email_data.get("to") or email_data.get("to_email")
         subject = email_data.get("subject", "")
-        body = email_data.get("body", "")
+        body = email_data.get("body") or email_data.get("message", "")
         attachments = email_data.get("attachments", [])
         track_opens = email_data.get("track_opens", True)
         track_clicks = email_data.get("track_clicks", True)
@@ -71,6 +116,9 @@ async def send_email_advanced(
         # Generate tracking ID
         tracking_id = str(uuid.uuid4())
         
+        # Keep a plain-body copy for SMTP (without injected tracking)
+        body_for_smtp = body
+
         # Insert tracking pixel if enabled
         if track_opens:
             tracking_pixel = f'<img src="{_BACKEND_URL}/api/crm/emails/track/{tracking_id}/open" width="1" height="1" style="display:none" />'
@@ -78,14 +126,15 @@ async def send_email_advanced(
 
         # Replace links with tracked versions if enabled
         if track_clicks:
-            import re
             def replace_link(match):
                 original_url = match.group(1)
                 tracked_url = f"{_BACKEND_URL}/api/crm/emails/track/{tracking_id}/click?url={original_url}"
                 return f'href="{tracked_url}"'
             body = re.sub(r'href="([^"]+)"', replace_link, body)
         
-        # Store email record
+        now = datetime.now(timezone.utc)
+
+        # Store email record in primary collection
         email_record = {
             "tracking_id": tracking_id,
             "to": to_email,
@@ -98,36 +147,70 @@ async def send_email_advanced(
             "attachments": [{"name": a.get("name"), "size": len(a.get("content", ""))} for a in attachments],
             "track_opens": track_opens,
             "track_clicks": track_clicks,
-            "status": "sent",
-            "sent_at": datetime.now(timezone.utc),
+            "sent_at": now,
             "sent_by": user.get("email"),
             "opens": [],
             "clicks": [],
-            "created_at": datetime.now(timezone.utc)
+            "created_at": now,
         }
         
+        # Actually send email via SMTP
+        smtp_success = False
+        smtp_error = None
+        try:
+            smtp_success = await _send_via_smtp(to_email, subject, body_for_smtp)
+        except Exception as smtp_exc:
+            smtp_error = str(smtp_exc)
+            logger.error(f"SMTP send failed to {to_email}: {smtp_exc}")
+
+        email_record["status"] = "sent" if smtp_success else ("queued" if not smtp_error else "failed_smtp")
+        email_record["smtp_success"] = smtp_success
+        if smtp_error:
+            email_record["smtp_error"] = smtp_error
+
         result = await db.emails.insert_one(email_record)
         email_record['_id'] = str(result.inserted_id)
         
-        # In production, actually send the email via SMTP/SendGrid/etc
-        # For now, we just store it
-        
-        # Log activity
-        if email_data.get("lead_id"):
-            await db.activities.insert_one({
-                "type": "email_sent",
-                "lead_id": email_data.get("lead_id"),
+        # Also write to email_history for backward-compat with history endpoint
+        history_record = {
+            "email_id": str(result.inserted_id),
+            "tracking_id": tracking_id,
+            "to": to_email,
+            "from": user.get("email"),
+            "subject": subject,
+            "lead_id": email_data.get("lead_id"),
+            "contact_id": email_data.get("contact_id"),
+            "sent_at": now,
+            "sent_by": user.get("email"),
+            "smtp_success": smtp_success,
+            "status": email_record["status"],
+        }
+        await db.email_history.insert_one(history_record)
+
+        # Log activity on lead (write to crm_activities for GET /leads/{id}/emails)
+        lead_id = email_data.get("lead_id")
+        if lead_id:
+            activity_doc = {
+                "type": "email",
+                "lead_id": lead_id,
                 "email_id": str(result.inserted_id),
+                "subject": subject,
+                "to_email": to_email,
                 "description": f"Email envoyé: {subject}",
+                "sent_by": user.get("email"),
+                "sent_at": now,
                 "created_by": user.get("email"),
-                "created_at": datetime.now(timezone.utc)
-            })
+                "created_at": now,
+                "status": email_record["status"],
+            }
+            await db.crm_activities.insert_one(activity_doc)
         
         return {
             "success": True,
             "email_id": str(result.inserted_id),
             "tracking_id": tracking_id,
-            "status": "sent"
+            "status": email_record["status"],
+            "smtp_sent": smtp_success,
         }
         
     except HTTPException:
@@ -731,9 +814,10 @@ async def export_all_data(user: Dict = Depends(require_admin)):
 @router.get("/emails/templates")
 async def get_email_templates(
     category: Optional[str] = None,
+    language: Optional[str] = None,
     user: Dict = Depends(get_current_user)
 ):
-    """Get all email templates"""
+    """Get all email templates, filterable by category and language"""
     db = get_db()
     if db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
@@ -741,11 +825,14 @@ async def get_email_templates(
         query = {}
         if category:
             query["category"] = category
+        if language:
+            query["language"] = language
         templates = await db.email_templates.find(query).sort("created_at", -1).to_list(200)
         for t in templates:
             t["_id"] = str(t["_id"])
             t["id"] = t["_id"]
-        return {"success": True, "data": templates, "total": len(templates)}
+        # Return both "templates" and "data" keys for frontend compatibility
+        return {"success": True, "templates": templates, "data": templates, "total": len(templates)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -822,5 +909,58 @@ async def delete_email_template(
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/emails/templates/test")
+async def send_test_email_template(
+    data: Dict = Body(...),
+    user: Dict = Depends(get_current_user)
+):
+    """
+    Send a test email using a template.
+    POST /api/crm/emails/templates/test
+    Body: { "template_id": "...", "to_email": "optional — defaults to current user" }
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        template_id = data.get("template_id")
+        to_email = data.get("to_email") or user.get("email")
+        if not template_id:
+            raise HTTPException(status_code=400, detail="template_id required")
+        if not to_email:
+            raise HTTPException(status_code=400, detail="to_email required")
+
+        template = await db.email_templates.find_one({"_id": ObjectId(template_id)})
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+
+        # Replace variables with example data for test
+        subject = f"[TEST] {template['subject']}"
+        body = template.get("body", "")
+        sample_vars = {
+            "{name}": "Jean Dupont",
+            "{{name}}": "Jean Dupont",
+            "{company}": "Exemple SA",
+            "{{company}}": "Exemple SA",
+            "{email}": to_email,
+            "{sender_name}": user.get("name", "IGV Team"),
+        }
+        for var, val in sample_vars.items():
+            body = body.replace(var, val)
+
+        smtp_success = await _send_via_smtp(to_email, subject, body)
+        return {
+            "success": True,
+            "smtp_sent": smtp_success,
+            "to": to_email,
+            "message": f"Test email {'sent' if smtp_success else 'stored (SMTP not configured)'} to {to_email}",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Test email failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -1078,21 +1078,31 @@ async def create_contact_note(contact_id: str, note_data: NoteCreate, user: Dict
 
 
 # ==========================================
-# EMAIL DRAFTS (from crm_missing_routes)
+# EMAIL DRAFTS — unified with email_export_routes (uses 'emails' collection, status=draft)
+# Legacy path /drafts kept for backward compat; canonical path is /emails/drafts
 # ==========================================
 
 @router.get("/drafts")
 async def get_email_drafts(user: Dict = Depends(get_current_user), limit: int = Query(50, le=200)):
-    """Get all email drafts for current user"""
+    """Get all email drafts for current user (unified with /emails/drafts endpoint)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
-        drafts = await current_db.email_drafts.find({
+        # Unified: read from 'emails' collection (same as email_export_routes.py /emails/drafts)
+        drafts = await current_db.emails.find({
+            "status": "draft",
             "created_by": user["email"]
-        }).sort("created_at", -1).limit(limit).to_list(limit)
+        }).sort("updated_at", -1).limit(limit).to_list(limit)
         
+        # Fallback: also check legacy email_drafts collection
+        if not drafts:
+            legacy = await current_db.email_drafts.find({
+                "created_by": user["email"]
+            }).sort("created_at", -1).limit(limit).to_list(limit)
+            drafts = legacy
+
         for draft in drafts:
             draft["_id"] = str(draft["_id"])
         
@@ -1104,25 +1114,27 @@ async def get_email_drafts(user: Dict = Depends(get_current_user), limit: int = 
 
 @router.post("/drafts")
 async def create_email_draft(draft_data: EmailDraftCreate, user: Dict = Depends(get_current_user)):
-    """Create new email draft"""
+    """Create new email draft (unified: writes to 'emails' collection)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
+        now = datetime.now(timezone.utc)
         new_draft = {
-            "to_email": draft_data.to_email,
+            "to": draft_data.to_email,
             "subject": draft_data.subject,
             "body": draft_data.body or draft_data.message,
             "lead_id": draft_data.lead_id,
             "contact_id": draft_data.contact_id,
             "opportunity_id": draft_data.opportunity_id,
+            "status": "draft",
             "created_by": user["email"],
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "created_at": now,
+            "updated_at": now,
         }
         
-        result = await current_db.email_drafts.insert_one(new_draft)
+        result = await current_db.emails.insert_one(new_draft)
         
         return {"message": "Draft created successfully", "draft_id": str(result.inserted_id)}
 
@@ -1131,16 +1143,23 @@ async def create_email_draft(draft_data: EmailDraftCreate, user: Dict = Depends(
 
 
 @router.delete("/drafts/{draft_id}")
-async def delete_email_draft(draft_id: str, user: Dict = Depends(get_current_user)):
-    """Delete an email draft"""
+async def delete_email_draft_legacy(draft_id: str, user: Dict = Depends(get_current_user)):
+    """Delete an email draft (unified: deletes from 'emails' collection)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=500, detail="Database not configured")
     try:
-        result = await current_db.email_drafts.delete_one({
+        result = await current_db.emails.delete_one({
             "_id": ObjectId(draft_id),
+            "status": "draft",
             "created_by": user["email"]
         })
+        if result.deleted_count == 0:
+            # Try legacy email_drafts collection
+            result = await current_db.email_drafts.delete_one({
+                "_id": ObjectId(draft_id),
+                "created_by": user["email"]
+            })
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Draft not found")
         return {"success": True, "message": "Draft deleted"}
@@ -2237,22 +2256,31 @@ async def get_email_history(
     lead_id: Optional[str] = None,
     user: Dict = Depends(get_current_user)
 ):
-    """Get email history with optional lead filter"""
+    """Get email history — reads from canonical 'emails' collection (status != draft),
+    with fallback to legacy 'email_history' collection for older records."""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
-        query = {}
+        query = {"status": {"$ne": "draft"}}
         if lead_id:
             query["lead_id"] = lead_id
-        
-        emails = await current_db.email_history.find(query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
-        total = await current_db.email_history.count_documents(query)
-        
+
+        emails = await current_db.emails.find(query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
+        total = await current_db.emails.count_documents(query)
+
+        # Fallback: also fetch legacy email_history records not already present
+        if not emails:
+            legacy_query = {}
+            if lead_id:
+                legacy_query["lead_id"] = lead_id
+            emails = await current_db.email_history.find(legacy_query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
+            total = await current_db.email_history.count_documents(legacy_query)
+
         for email in emails:
             email["_id"] = str(email["_id"])
-        
-        return {"success": True, "data": emails, "total": total, "skip": skip, "limit": limit}
+
+        return {"success": True, "emails": emails, "data": emails, "total": total, "skip": skip, "limit": limit}
     except Exception as e:
         logging.error(f"Email history error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2628,21 +2656,25 @@ async def get_opportunity_activities(opp_id: str, user: Dict = Depends(get_curre
 
 @router.delete("/emails/{email_id}")
 async def delete_email(email_id: str, user: Dict = Depends(get_current_user)):
-    """Delete an email from history"""
+    """Delete an email from canonical emails collection (with legacy email_history fallback)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
-        result = await current_db.email_history.delete_one({"_id": ObjectId(email_id)})
+        # Try primary emails collection first
+        result = await current_db.emails.delete_one({"_id": ObjectId(email_id)})
         if result.deleted_count == 0:
-            # Try crm_activities collection as fallback
-            result2 = await current_db.crm_activities.delete_one({"_id": ObjectId(email_id)})
-            if result2.deleted_count == 0:
-                raise HTTPException(status_code=404, detail="Email not found")
+            # Fallback to legacy email_history collection
+            result = await current_db.email_history.delete_one({"_id": ObjectId(email_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Email not found")
+        # Also remove from email_history mirror if present
+        await current_db.email_history.delete_one({"email_id": email_id})
         return {"success": True, "message": "Email deleted"}
     except HTTPException:
         raise
     except Exception as e:
         logging.error(f"Error deleting email: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
