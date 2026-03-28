@@ -554,15 +554,10 @@ async def create_lead(lead_data: LeadCreate, user: Dict = Depends(get_current_us
         
         result = await current_db.leads.insert_one(new_lead)
         
-        # Log activity (with safe user id access)
+        # Log activity
         try:
             await log_audit_event(
-                current_db,
-                user_id=user.get("id", user.get("_id", "")),
-                user_email=user["email"],
-                action="lead_created",
-                resource_type="lead",
-                resource_id=str(result.inserted_id),
+                user, "lead_created", "lead", str(result.inserted_id),
                 details={"email": lead_data.email, "brand_name": lead_data.brand_name}
             )
         except Exception as audit_error:
@@ -609,15 +604,13 @@ async def update_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], 
     )
     
     # Log activity
-    await log_audit_event(
-        current_db,
-        user_id=user["id"],
-        user_email=user["email"],
-        action="lead_updated",
-        resource_type="lead",
-        resource_id=lead_id,
-        details={"changes": {k: str(v) for k, v in update_dict.items()}}
-    )
+    try:
+        await log_audit_event(
+            user, "lead_updated", "lead", lead_id,
+            details={"changes": {k: str(v) for k, v in update_dict.items()}}
+        )
+    except Exception:
+        pass
     
     return {"message": "Lead updated successfully"}
 
@@ -644,15 +637,10 @@ async def delete_lead(lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")], 
         raise HTTPException(status_code=404, detail="Lead not found")
     
     # Log activity
-    await log_audit_event(
-        current_db,
-        user_id=user["id"],
-        user_email=user["email"],
-        action="lead_deleted",
-        resource_type="lead",
-        resource_id=lead_id,
-        details={}
-    )
+    try:
+        await log_audit_event(user, "lead_deleted", "lead", lead_id)
+    except Exception:
+        pass
     
     return {"message": "Lead deleted successfully"}
 
@@ -674,15 +662,13 @@ async def bulk_delete_leads(data: Dict = Body(...), user: Dict = Depends(require
         raise HTTPException(status_code=400, detail="No valid lead IDs")
     try:
         result = await current_db.leads.delete_many({"_id": {"$in": object_ids}})
-        await log_audit_event(
-            current_db,
-            user_id=user["id"],
-            user_email=user["email"],
-            action="leads_bulk_deleted",
-            resource_type="lead",
-            resource_id="bulk",
-            details={"count": result.deleted_count, "ids": lead_ids}
-        )
+        try:
+            await log_audit_event(
+                user, "leads_bulk_deleted", "lead", "bulk",
+                details={"count": result.deleted_count, "ids": lead_ids}
+            )
+        except Exception:
+            pass
         return {"success": True, "deleted_count": result.deleted_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -755,6 +741,38 @@ async def get_lead_activities(
         raise
     except Exception as e:
         logging.error(f"Error fetching lead activities: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/leads/{lead_id}/activities")
+async def create_lead_activity(
+    lead_id: Annotated[str, Path(pattern=r"^[a-f0-9]{24}$")],
+    activity_data: dict,
+    user: Dict = Depends(get_current_user)
+):
+    """Create an activity linked to a specific lead"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        lead = await current_db.leads.find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        new_activity = {
+            **activity_data,
+            "lead_id": lead_id,
+            "created_by": user["email"],
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        result = await current_db.crm_activities.insert_one(new_activity)
+        new_activity["_id"] = str(result.inserted_id)
+        new_activity["id"] = new_activity["_id"]
+        return {"success": True, "activity": new_activity, "id": new_activity["_id"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error creating lead activity: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1098,7 +1116,24 @@ async def create_contact_note(contact_id: str, note_data: NoteCreate, user: Dict
         result = await current_db.notes.insert_one(new_note)
         
         return {"message": "Note created successfully", "note_id": str(result.inserted_id)}
-        
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/contacts/{contact_id}/notes/{note_id}")
+async def delete_contact_note(contact_id: str, note_id: str, user: Dict = Depends(get_current_user)):
+    """Delete a note from a contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        result = await current_db.notes.delete_one({"_id": ObjectId(note_id), "contact_id": contact_id})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Note not found")
+        return {"message": "Note deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1106,7 +1141,7 @@ async def create_contact_note(contact_id: str, note_data: NoteCreate, user: Dict
 
 
 # ==========================================
-# EMAIL DRAFTS — unified with email_export_routes (uses 'emails' collection, status=draft)
+# EMAIL DRAFTS— unified with email_export_routes (uses 'emails' collection, status=draft)
 # Legacy path /drafts kept for backward compat; canonical path is /emails/drafts
 # ==========================================
 
@@ -1614,15 +1649,13 @@ async def update_lead_next_action(lead_id: Annotated[str, Path(pattern=r"^[a-f0-
         )
         
         # Log activity
-        await log_audit_event(
-            current_db,
-            user_id=user["id"],
-            user_email=user["email"],
-            action="next_action_updated",
-            resource_type="lead",
-            resource_id=lead_id,
-            details={"next_action": data.get("next_action"), "next_action_date": str(data.get("next_action_date"))}
-        )
+        try:
+            await log_audit_event(
+                user, "next_action_updated", "lead", lead_id,
+                details={"next_action": data.get("next_action"), "next_action_date": str(data.get("next_action_date"))}
+            )
+        except Exception:
+            pass
         
         return {"success": True, "message": "Next action updated"}
         
@@ -1890,7 +1923,10 @@ async def update_user_role(user_id: str, data: Dict = Body(...), admin: Dict = D
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        await log_audit_event(current_db, "user_role_updated", admin["email"], {"user_id": user_id, "new_role": new_role})
+        try:
+            await log_audit_event(admin, "user_role_updated", "user", str(user_id), details={"new_role": new_role})
+        except Exception:
+            pass
         return {"success": True, "message": "Role updated"}
     except Exception as e:
         logging.error(f"Update role error: {e}")
@@ -1913,7 +1949,10 @@ async def set_custom_permissions(user_id: str, data: Dict = Body(...), admin: Di
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        await log_audit_event(current_db, "user_permissions_updated", admin["email"], {"user_id": user_id, "permissions": permissions})
+        try:
+            await log_audit_event(admin, "user_permissions_updated", "user", str(user_id), details={"permissions": permissions})
+        except Exception:
+            pass
         return {"success": True, "message": "Permissions updated"}
     except Exception as e:
         logging.error(f"Update permissions error: {e}")
@@ -2076,7 +2115,10 @@ async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_
         new_user["_id"] = str(result.inserted_id)
         new_user.pop("password")
         
-        await log_audit_event(current_db, "user_created", admin["email"], {"user_email": email, "role": role, "name": name})
+        try:
+            await log_audit_event(admin, "user_created", "user", str(email), details={"role": role, "name": name})
+        except Exception:
+            pass
         return {"success": True, "data": new_user}
     except Exception as e:
         logging.error(f"Create user error: {e}")
@@ -2115,7 +2157,10 @@ async def update_crm_user(user_id: str, data: Dict = Body(...), admin: Dict = De
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        await log_audit_event(current_db, "user_updated", admin["email"], {"user_id": user_id, "changes": update_data})
+        try:
+            await log_audit_event(admin, "user_updated", "user", str(user_id), details={"changes": update_data})
+        except Exception:
+            pass
         return {"success": True, "message": "User updated"}
     except Exception as e:
         logging.error(f"Update user error: {e}")
@@ -2138,7 +2183,10 @@ async def delete_crm_user(user_id: str, admin: Dict = Depends(require_admin)):
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        await log_audit_event(current_db, "user_deleted", admin["email"], {"user_id": user_id, "user_email": user.get("email")})
+        try:
+            await log_audit_event(admin, "user_deleted", "user", str(user_id), details={"user_email": user.get("email")})
+        except Exception:
+            pass
         return {"success": True, "message": "User deleted"}
     except Exception as e:
         logging.error(f"Delete user error: {e}")
@@ -2169,10 +2217,47 @@ async def assign_user_to_entity(user_id: str, data: Dict = Body(...), admin: Dic
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Entity not found")
         
-        await log_audit_event(current_db, "user_assigned", admin["email"], {"user_id": user_id, "entity_type": entity_type, "entity_id": entity_id})
+        try:
+            await log_audit_event(admin, "user_assigned", "user", str(user_id), details={"entity_type": entity_type, "entity_id": entity_id})
+        except Exception:
+            pass
         return {"success": True, "message": "User assigned"}
     except Exception as e:
         logging.error(f"Assign user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings/users/change-password")
+async def change_own_password(data: Dict = Body(...), user: Dict = Depends(get_current_user)):
+    """Self-service: change current user's own password (verifies current password)"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        from passlib.hash import bcrypt
+        current_password = data.get("current_password")
+        new_password = data.get("new_password")
+        if not current_password or not new_password:
+            raise HTTPException(status_code=400, detail="current_password and new_password are required")
+        crm_user = await current_db.crm_users.find_one({"email": user["email"]})
+        if not crm_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not bcrypt.verify(current_password, crm_user["password"]):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        hashed = bcrypt.hash(new_password)
+        await current_db.crm_users.update_one(
+            {"email": user["email"]},
+            {"$set": {"password": hashed, "updated_at": datetime.now(timezone.utc)}}
+        )
+        try:
+            await log_audit_event(user, "password_changed", "user", user["email"])
+        except Exception:
+            pass
+        return {"success": True, "message": "Password changed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Change own password error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2198,7 +2283,10 @@ async def change_user_password(user_id: str, data: Dict = Body(...), admin: Dict
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        await log_audit_event(current_db, "password_changed", admin["email"], {"user_id": user_id})
+        try:
+            await log_audit_event(admin, "password_changed", "user", str(user_id))
+        except Exception:
+            pass
         return {"success": True, "message": "Password changed"}
     except Exception as e:
         logging.error(f"Change password error: {e}")
@@ -2461,15 +2549,13 @@ async def convert_lead_to_contact(lead_id: Annotated[str, Path(pattern=r"^[a-f0-
         )
         
         # Log activity
-        await log_audit_event(
-            current_db,
-            user_id=user.get("id", ""),
-            user_email=user["email"],
-            action="lead_converted",
-            resource_type="lead",
-            resource_id=lead_id,
-            details={"contact_id": contact_id}
-        )
+        try:
+            await log_audit_event(
+                user, "lead_converted", "lead", lead_id,
+                details={"contact_id": contact_id}
+            )
+        except Exception:
+            pass
         
         return {
             "message": "Lead converted to contact successfully",
@@ -2610,6 +2696,29 @@ async def get_contact_activities(contact_id: str, user: Dict = Depends(get_curre
         return {"activities": activities, "total": len(activities)}
     except Exception as e:
         logging.error(f"Error fetching contact activities: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/contacts/{contact_id}/activities")
+async def create_contact_activity(contact_id: str, activity_data: dict, user: Dict = Depends(get_current_user)):
+    """Create an activity linked to a specific contact"""
+    current_db = get_db()
+    if current_db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    try:
+        new_activity = {
+            **activity_data,
+            "contact_id": contact_id,
+            "created_by": user["email"],
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        result = await current_db.crm_activities.insert_one(new_activity)
+        new_activity["_id"] = str(result.inserted_id)
+        new_activity["id"] = new_activity["_id"]
+        return {"success": True, "activity": new_activity, "id": new_activity["_id"]}
+    except Exception as e:
+        logging.error(f"Error creating contact activity: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
