@@ -252,53 +252,9 @@ async def execute_automation_rules(user: Dict = Depends(require_admin)):
 
 # ==========================================
 # POINT 4: PROCHAINE ACTION OBLIGATOIRE
+# NOTE: GET /leads/missing-next-action removed — active version is in crm/main.py (registered first)
+# NOTE: GET /leads/overdue-actions removed — active version is in crm/main.py (registered first)
 # ==========================================
-
-@router.get("/leads/missing-next-action")
-async def get_leads_missing_next_action(
-    priority: Optional[str] = Query(None),
-    limit: int = Query(50, le=200),
-    user: Dict = Depends(get_current_user)
-):
-    """Get leads without a next action planned"""
-    db = get_db()
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        query = {
-            "status": {"$nin": ["converted", "lost", "merged"]},
-            "$or": [
-                {"next_action": {"$exists": False}},
-                {"next_action": None},
-                {"next_action.date": None}
-            ]
-        }
-        
-        if priority:
-            query["priority"] = priority
-        
-        # RBAC filtering
-        if user.get("role") == "commercial":
-            query["owner_email"] = user.get("email")
-        
-        leads = await db.leads.find(query).sort("created_at", -1).to_list(length=limit)
-        
-        for lead in leads:
-            lead['_id'] = str(lead['_id'])
-            if 'lead_id' not in lead:
-                lead['lead_id'] = lead['_id']
-        
-        return {
-            "leads": leads,
-            "total": len(leads),
-            "message": "Ces leads n'ont pas de prochaine action planifiée"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting leads without next action: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.put("/leads/{lead_id}/next-action")
 async def set_lead_next_action(
@@ -380,49 +336,10 @@ async def set_lead_next_action(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/leads/overdue-actions")
-async def get_overdue_actions(
-    limit: int = Query(50, le=200),
-    user: Dict = Depends(get_current_user)
-):
-    """Get leads with overdue next actions"""
-    db = get_db()
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        now = datetime.now(timezone.utc)
-        
-        query = {
-            "status": {"$nin": ["converted", "lost", "merged"]},
-            "next_action.date": {"$lt": now}
-        }
-        
-        if user.get("role") == "commercial":
-            query["owner_email"] = user.get("email")
-        
-        leads = await db.leads.find(query).sort("next_action.date", 1).to_list(length=limit)
-        
-        for lead in leads:
-            lead['_id'] = str(lead['_id'])
-            # Calculate days overdue
-            if lead.get("next_action", {}).get("date"):
-                action_date = lead["next_action"]["date"]
-                if isinstance(action_date, datetime):
-                    lead["days_overdue"] = (now - action_date).days
-        
-        return {
-            "leads": leads,
-            "total": len(leads)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting overdue actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ==========================================
 # POINT 5: SUIVI DÉLAIS DE RÉPONSE (KPI)
+# NOTE: These routes are unreachable — crm/main.py (registered first) handles all /kpi/* routes.
+# Kept for documentation/reference only.
 # ==========================================
 
 @router.get("/kpi/response-times")

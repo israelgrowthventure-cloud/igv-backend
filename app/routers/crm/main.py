@@ -23,7 +23,8 @@ from auth_middleware import (
     get_user_assigned_filter,
     get_user_write_permission,
     log_audit_event,
-    get_db
+    get_db,
+    VALID_CRM_ROLES
 )
 
 # CRM Router with /api/crm prefix
@@ -420,7 +421,10 @@ async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)
         now = datetime.now(timezone.utc)
         overdue_filter = {
             **user_filter,
-            "next_action_date": {"$lt": now},
+            "$or": [
+                {"next_action_date": {"$lt": now, "$ne": None}},
+                {"next_action.date": {"$lt": now, "$ne": None}}
+            ],
             "status": {"$nin": ["converted", "lost"]}
         }
         leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(limit)
@@ -428,6 +432,22 @@ async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)
         for lead in leads:
             lead["_id"] = str(lead["_id"])
             lead["id"] = lead["_id"]
+            # Calculate days_overdue from whichever date field is present
+            action_date = lead.get("next_action_date") or (lead.get("next_action") or {}).get("date")
+            if action_date:
+                if isinstance(action_date, str):
+                    try:
+                        from datetime import datetime as dt
+                        action_date = dt.fromisoformat(action_date.replace("Z", "+00:00"))
+                    except Exception:
+                        action_date = None
+                if action_date:
+                    delta = now - action_date if action_date.tzinfo else now.replace(tzinfo=None) - action_date
+                    lead["days_overdue"] = max(0, delta.days)
+                else:
+                    lead["days_overdue"] = 0
+            else:
+                lead["days_overdue"] = 0
         return {"success": True, "leads": leads, "data": leads, "total": len(leads)}
     except Exception as e:
         logging.error(f"[CRM Leads] Error getting overdue actions: {e}")
@@ -435,7 +455,11 @@ async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)
 
 
 @router.get("/leads/missing-next-action")
-async def get_leads_missing_next_action_early(user: Dict = Depends(get_current_user)):
+async def get_leads_missing_next_action_early(
+    user: Dict = Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=200),
+    priority: Optional[str] = Query(None)
+):
     """Get leads without next action defined — static route must come before /leads/{lead_id}"""
     current_db = get_db()
     if current_db is None:
@@ -447,12 +471,16 @@ async def get_leads_missing_next_action_early(user: Dict = Depends(get_current_u
             "$or": [
                 {"next_action": {"$exists": False}},
                 {"next_action": None},
-                {"next_action": ""}
+                {"next_action": ""},
+                {"next_action_date": {"$exists": False}},
+                {"next_action_date": None}
             ],
             "status": {"$nin": ["converted", "lost"]}
         }
-        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(100)
-        leads = await leads_cursor.to_list(100)
+        if priority:
+            missing_filter["priority"] = priority
+        leads_cursor = current_db.leads.find(missing_filter).sort("created_at", -1).limit(limit)
+        leads = await leads_cursor.to_list(limit)
         for lead in leads:
             lead["_id"] = str(lead["_id"])
             lead["id"] = lead["_id"]
@@ -1645,22 +1673,30 @@ async def admin_get_leads(limit: int = Query(10, le=200), skip: int = 0, user: D
 # KPI ENDPOINTS
 # ==========================================
 
+def _kpi_start_date(period: str):
+    now = datetime.now(timezone.utc)
+    days = {"week": 7, "month": 30, "quarter": 90, "year": 365}.get(period, 30)
+    return now - timedelta(days=days)
+
+
 @router.get("/kpi/response-times")
-async def get_response_times_kpi(user: Dict = Depends(get_current_user)):
+async def get_response_times_kpi(
+    period: str = Query("month", pattern="^(week|month|quarter|year)$"),
+    user: Dict = Depends(get_current_user)
+):
     """Get average response times using MongoDB aggregation (optimized)"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
     try:
-        # Date limite: 30 derniers jours
-        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        start_date = _kpi_start_date(period)
         
         pipeline = [
-            # Filtre: leads des 30 derniers jours
+            # Filtre: leads dans la periode
             {
                 "$match": {
-                    "created_at": {"$gte": thirty_days_ago}
+                    "created_at": {"$gte": start_date}
                 }
             },
             # Jointure avec activités
@@ -1705,7 +1741,7 @@ async def get_response_times_kpi(user: Dict = Depends(get_current_user)):
             }
         ]
         
-        result = await current_db.crm_leads.aggregate(pipeline).to_list(None)
+        result = await current_db.leads.aggregate(pipeline).to_list(None)
         
         # Convert milliseconds to hours
         for item in result:
@@ -1714,39 +1750,48 @@ async def get_response_times_kpi(user: Dict = Depends(get_current_user)):
             else:
                 item["avg_response_time_hours"] = 0
         
-        return {"success": True, "data": result}
+        return {"success": True, "data": result, "period": period}
     except Exception as e:
         logging.error(f"KPI response-times error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/kpi/conversion-times")
-async def get_conversion_times_kpi(user: Dict = Depends(get_current_user)):
+async def get_conversion_times_kpi(
+    period: str = Query("month", pattern="^(week|month|quarter|year)$"),
+    user: Dict = Depends(get_current_user)
+):
     """Get average conversion times by source"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
+        start_date = _kpi_start_date(period)
         pipeline = [
-            {"$match": {"status": "converted"}},
-            {"$group": {"_id": "$source", "avg_conversion_time": {"$avg": "$conversion_time"}}},
+            {"$match": {"status": "converted", "created_at": {"$gte": start_date}}},
+            {"$group": {"_id": "$source", "avg_conversion_time": {"$avg": "$conversion_time"}, "count": {"$sum": 1}}},
             {"$sort": {"avg_conversion_time": 1}}
         ]
         result = await current_db.leads.aggregate(pipeline).to_list(None)
-        return {"success": True, "data": result}
+        return {"success": True, "data": result, "period": period}
     except Exception as e:
         logging.error(f"KPI conversion-times error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/kpi/source-performance")
-async def get_source_performance_kpi(user: Dict = Depends(get_current_user)):
+async def get_source_performance_kpi(
+    period: str = Query("month", pattern="^(week|month|quarter|year)$"),
+    user: Dict = Depends(get_current_user)
+):
     """Get performance metrics by source"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
+        start_date = _kpi_start_date(period)
         pipeline = [
+            {"$match": {"created_at": {"$gte": start_date}}},
             {"$group": {
                 "_id": "$source",
                 "total_leads": {"$sum": 1},
@@ -1756,25 +1801,30 @@ async def get_source_performance_kpi(user: Dict = Depends(get_current_user)):
             {"$sort": {"conversion_rate": -1}}
         ]
         result = await current_db.leads.aggregate(pipeline).to_list(None)
-        return {"success": True, "data": result}
+        return {"success": True, "data": result, "period": period}
     except Exception as e:
         logging.error(f"KPI source-performance error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/kpi/funnel")
-async def get_funnel_kpi(user: Dict = Depends(get_current_user)):
+async def get_funnel_kpi(
+    period: str = Query("month", pattern="^(week|month|quarter|year)$"),
+    user: Dict = Depends(get_current_user)
+):
     """Get funnel conversion rates by stage"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
+        start_date = _kpi_start_date(period)
         pipeline = [
+            {"$match": {"created_at": {"$gte": start_date}}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}
         ]
         result = await current_db.leads.aggregate(pipeline).to_list(None)
-        return {"success": True, "data": result}
+        return {"success": True, "data": result, "period": period}
     except Exception as e:
         logging.error(f"KPI funnel error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1789,12 +1839,13 @@ async def get_rbac_roles(user: Dict = Depends(get_current_user)):
     """Get all available roles and permissions"""
     try:
         roles = {
-            "admin": {"name": "Admin", "permissions": ["read", "write", "delete", "manage_users"]},
+            "admin": {"name": "Admin", "permissions": ["read", "write", "delete", "manage_users", "manage_team"]},
             "manager": {"name": "Manager", "permissions": ["read", "write", "manage_team"]},
-            "sales": {"name": "Sales", "permissions": ["read", "write"]},
-            "viewer": {"name": "Viewer", "permissions": ["read"]}
+            "commercial": {"name": "Commercial", "permissions": ["read", "write"]},
+            "support": {"name": "Support", "permissions": ["read", "write"]},
+            "readonly": {"name": "Readonly", "permissions": ["read"]}
         }
-        return {"success": True, "data": roles}
+        return {"success": True, "data": roles, "valid_roles": VALID_CRM_ROLES}
     except Exception as e:
         logging.error(f"RBAC roles error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1825,8 +1876,8 @@ async def update_user_role(user_id: str, data: Dict = Body(...), admin: Dict = D
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
         new_role = data.get("role")
-        if new_role not in ["admin", "manager", "sales", "viewer"]:
-            raise HTTPException(status_code=400, detail="Invalid role")
+        if new_role not in VALID_CRM_ROLES:
+            raise HTTPException(status_code=400, detail=f"Invalid role. Valid roles: {VALID_CRM_ROLES}")
         
         result = await current_db.crm_users.update_one(
             {"_id": ObjectId(user_id)},

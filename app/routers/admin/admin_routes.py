@@ -5,6 +5,7 @@ MISSION F: Quota Gemini - Process pending analyses with retry mechanism
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Body as _Body
+from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
@@ -408,125 +409,9 @@ async def get_pending_stats(user: Dict = Depends(require_admin)):
 # USER MANAGEMENT ROUTES
 # =============================================================================
 
-from pydantic import BaseModel, EmailStr
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-class UserCreate(BaseModel):
-    """User creation schema"""
-    email: EmailStr
-    name: str
-    password: str
-    role: str = "user"
-
-class UserUpdate(BaseModel):
-    """User update schema"""
-    name: Optional[str] = None
-    role: Optional[str] = None
-    password: Optional[str] = None
-
-@router.post("/users")
-async def create_user(user_data: UserCreate, _admin: Dict = Depends(require_admin)):
-    """
-    Create a new user
-    POST /api/admin/users
-    """
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    
-    try:
-        # Check if email already exists
-        existing = await current_db.users.find_one({"email": user_data.email})
-        if existing:
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
-        
-        # Hash password
-        hashed_password = pwd_context.hash(user_data.password)
-        
-        user_record = {
-            "email": user_data.email,
-            "name": user_data.name,
-            "password": hashed_password,
-            "role": user_data.role,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            "active": True
-        }
-        
-        result = await current_db.users.insert_one(user_record)
-        logging.info(f"User created: {user_data.email}")
-        
-        return {
-            "status": "created",
-            "user_id": str(result.inserted_id),
-            "email": user_data.email,
-            "name": user_data.name,
-            "role": user_data.role
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error creating user: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/users")
-async def list_users(user: Dict = Depends(require_admin)):
-    """
-    List all users (without passwords)
-    GET /api/admin/users
-    """
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    
-    try:
-        users_cursor = current_db.users.find({}, {"password": 0})
-        users = await users_cursor.to_list(100)
-        
-        # Serialize ObjectIds
-        for user in users:
-            user["_id"] = str(user["_id"])
-            if "created_at" in user:
-                user["created_at"] = user["created_at"].isoformat() if hasattr(user["created_at"], 'isoformat') else str(user["created_at"])
-        
-        return {"users": users, "count": len(users)}
-    except Exception as e:
-        logging.error(f"Error listing users: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/users/{user_id}")
-async def delete_user(user_id: str, _admin: Dict = Depends(require_admin)):
-    """
-    Delete a user
-    DELETE /api/admin/users/{user_id}
-    """
-    current_db = get_db()
-    if current_db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    
-    try:
-        from bson import ObjectId
-        
-        try:
-            result = await current_db.users.delete_one({"_id": ObjectId(user_id)})
-        except:
-            result = await current_db.users.delete_one({"_id": user_id})
-        
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-        
-        logging.info(f"User deleted: {user_id}")
-        return {"status": "deleted", "user_id": user_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error deleting user: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+# NOTE: POST /users, GET /users, DELETE /users/{user_id} removed from this router.
+# These routes are handled by admin_user_routes.py (registered before this router in server.py).
+# Keeping them here would create unreachable duplicate handlers.
 
 # =============================================================================
 # SETTINGS ROUTES
