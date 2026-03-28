@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 import os
 import uuid
 from bson import ObjectId
@@ -838,6 +839,103 @@ async def get_faq_admin(
         item["_id"] = str(item["_id"])
     
     return {"items": items}
+
+
+@router.get("/admin/faq-overview")
+async def get_faq_overview(user: Dict = Depends(get_current_user)):
+    """
+    Return a read-only overview of FAQ items extracted from each article's HTML
+    content. This is the real source of truth: what visitors actually see.
+    Articles store FAQ inline as <h3>FAQ</h3> + <h4>question</h4> + <p>answer</p>.
+    """
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    cursor = db.blog_articles.find({}).sort("created_at", -1)
+    all_articles = await cursor.to_list(length=500)
+
+    class _FAQParser(HTMLParser):
+        """Extract FAQ items from Quill-generated HTML."""
+        def __init__(self):
+            super().__init__()
+            self._in_faq = False
+            self._cur_tag = None
+            self._buf = []
+            self._cur_q = None
+            self._cur_ans = []
+            self.faqs = []
+
+        def handle_starttag(self, tag, attrs):
+            self._cur_tag = tag
+            self._buf = []
+
+        def handle_endtag(self, tag):
+            text = ''.join(self._buf).strip()
+            if tag == 'h3':
+                if 'faq' in text.lower():
+                    self._in_faq = True
+                    self._cur_q = None
+                    self._cur_ans = []
+                elif self._in_faq:
+                    self._flush()
+                    self._in_faq = False
+            elif tag == 'h4' and self._in_faq:
+                self._flush()
+                self._cur_q = text
+                self._cur_ans = []
+            elif self._in_faq and self._cur_q and tag in ('p', 'li', 'span'):
+                if text:
+                    self._cur_ans.append(text)
+            self._cur_tag = None
+
+        def handle_data(self, data):
+            self._buf.append(data)
+
+        def _flush(self):
+            if self._cur_q:
+                self.faqs.append({
+                    'question': self._cur_q,
+                    'answer_text': ' '.join(self._cur_ans).strip()
+                })
+                self._cur_q = None
+                self._cur_ans = []
+
+        def finalize(self):
+            self._flush()
+            return self.faqs
+
+    articles_data = []
+    total_faq_count = 0
+    articles_with_faq = 0
+
+    for article in all_articles:
+        content = article.get('content') or ''
+        parser = _FAQParser()
+        try:
+            parser.feed(content)
+        except Exception:
+            pass
+        faqs = parser.finalize()
+        faq_count = len(faqs)
+        total_faq_count += faq_count
+        if faq_count > 0:
+            articles_with_faq += 1
+        articles_data.append({
+            'article_id': str(article['_id']),
+            'article_title': article.get('title', ''),
+            'language': article.get('language', 'fr'),
+            'slug': article.get('slug', ''),
+            'published': article.get('published', False),
+            'faq_count': faq_count,
+            'faqs': faqs,
+        })
+
+    return {
+        'total_faq_count': total_faq_count,
+        'articles_with_faq': articles_with_faq,
+        'articles': articles_data,
+    }
 
 
 @router.post("/admin/faq")
