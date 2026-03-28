@@ -291,11 +291,7 @@ ROLES = {
 }
 
 
-@router.get("/roles")
-async def list_roles(user: Dict = Depends(require_admin)):
-    """List all available roles and their permissions"""
-    return {"roles": ROLES}
-
+# REMOVED: GET /roles — active version in crm/main.py (registered first, line 2300)
 
 @router.get("/permissions")
 async def get_user_permissions(user: Dict = Depends(get_current_user)):
@@ -311,82 +307,7 @@ async def get_user_permissions(user: Dict = Depends(get_current_user)):
     }
 
 
-@router.put("/users/{user_id}/role")
-async def update_user_role(
-    user_id: str,
-    role_data: Dict = Body(...),
-    user: Dict = Depends(require_admin)
-):
-    """
-    Update a user's role
-    Admin only
-    """
-    db = get_db()
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        new_role = role_data.get("role")
-        if new_role not in ROLES:
-            raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {list(ROLES.keys())}")
-        
-        # Find user
-        try:
-            target_user = await db.crm_users.find_one({"_id": ObjectId(user_id)})
-        except:
-            target_user = await db.crm_users.find_one({"email": user_id})
-        
-        if not target_user:
-            # Try legacy users collection
-            try:
-                target_user = await db.users.find_one({"_id": ObjectId(user_id)})
-            except:
-                target_user = await db.users.find_one({"email": user_id})
-        
-        if not target_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Prevent self-demotion from admin
-        if str(target_user.get("email")) == user.get("email") and new_role != "admin":
-            raise HTTPException(status_code=400, detail="Cannot demote yourself from admin")
-        
-        # Update role
-        collection = db.crm_users if await db.crm_users.find_one({"_id": target_user["_id"]}) else db.users
-        
-        await collection.update_one(
-            {"_id": target_user["_id"]},
-            {
-                "$set": {
-                    "role": new_role,
-                    "updated_at": datetime.now(timezone.utc),
-                    "updated_by": user.get("email")
-                }
-            }
-        )
-        
-        # Audit log
-        await db.audit_logs.insert_one({
-            "action": "role_change",
-            "entity_type": "user",
-            "entity_id": str(target_user["_id"]),
-            "user_email": user.get("email"),
-            "old_role": target_user.get("role"),
-            "new_role": new_role,
-            "timestamp": datetime.now(timezone.utc)
-        })
-        
-        return {
-            "success": True,
-            "user_id": str(target_user["_id"]),
-            "new_role": new_role,
-            "permissions": ROLES[new_role]["permissions"]
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating user role: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# REMOVED: PUT /users/{user_id}/role — active version in crm/main.py (registered first, line 1907)
 
 
 @router.post("/users/{user_id}/permissions")

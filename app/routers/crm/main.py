@@ -139,7 +139,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     name: str
     password: str
-    role: str = "viewer"
+    role: str = "commercial"
 
 
 class UserUpdate(BaseModel):
@@ -1988,7 +1988,7 @@ async def get_audit_logs(
         for log in logs:
             log["_id"] = str(log["_id"])
         
-        return {"success": True, "data": logs, "total": total, "skip": skip, "limit": limit}
+        return {"success": True, "logs": logs, "data": logs, "total": total, "skip": skip, "limit": limit}
     except Exception as e:
         logging.error(f"Audit logs error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1996,17 +1996,33 @@ async def get_audit_logs(
 
 @router.get("/audit-logs/stats")
 async def get_audit_stats(user: Dict = Depends(get_current_user)):
-    """Get audit log statistics"""
+    """Get audit log statistics — returns total_logs, today, this_week, unique_users"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
-        pipeline = [
-            {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = now - timedelta(days=7)
+
+        total_logs = await current_db.audit_logs.count_documents({})
+        today_count = await current_db.audit_logs.count_documents({"timestamp": {"$gte": today_start}})
+        week_count = await current_db.audit_logs.count_documents({"timestamp": {"$gte": week_start}})
+
+        # Count distinct users from audit logs
+        unique_users_pipeline = [
+            {"$group": {"_id": "$user_email"}},
+            {"$count": "total"}
         ]
-        result = await current_db.audit_logs.aggregate(pipeline).to_list(None)
-        return {"success": True, "data": result}
+        unique_result = await current_db.audit_logs.aggregate(unique_users_pipeline).to_list(1)
+        unique_users = unique_result[0]["total"] if unique_result else 0
+
+        return {
+            "total_logs": total_logs,
+            "today": today_count,
+            "this_week": week_count,
+            "unique_users": unique_users
+        }
     except Exception as e:
         logging.error(f"Audit stats error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2082,7 +2098,7 @@ async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_
         from passlib.hash import bcrypt
         email = data.get("email")
         password = data.get("password")
-        role = data.get("role", "viewer")
+        role = data.get("role", "commercial")
         name = data.get("name", "")
         first_name = data.get("first_name", "")
         last_name = data.get("last_name", "")
@@ -2090,6 +2106,9 @@ async def create_crm_user(data: Dict = Body(...), admin: Dict = Depends(require_
         
         if not email or not password:
             raise HTTPException(status_code=400, detail="Email and password required")
+        
+        if role not in VALID_CRM_ROLES:
+            raise HTTPException(status_code=400, detail=f"Invalid role '{role}'. Must be one of: {VALID_CRM_ROLES}")
         
         # Use name if provided, otherwise build from first_name + last_name
         if not name and (first_name or last_name):
