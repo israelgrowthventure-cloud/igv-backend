@@ -410,7 +410,7 @@ async def get_leads(
 
 
 @router.get("/leads/overdue-actions")
-async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)):
+async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user), limit: int = Query(20, ge=1, le=100)):
     """Get leads with overdue next actions — static route must come before /leads/{lead_id}"""
     current_db = get_db()
     if current_db is None:
@@ -423,8 +423,8 @@ async def get_leads_overdue_actions_early(user: Dict = Depends(get_current_user)
             "next_action_date": {"$lt": now},
             "status": {"$nin": ["converted", "lost"]}
         }
-        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(100)
-        leads = await leads_cursor.to_list(100)
+        leads_cursor = current_db.leads.find(overdue_filter).sort("next_action_date", 1).limit(limit)
+        leads = await leads_cursor.to_list(limit)
         for lead in leads:
             lead["_id"] = str(lead["_id"])
             lead["id"] = lead["_id"]
