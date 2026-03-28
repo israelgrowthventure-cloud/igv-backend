@@ -1797,7 +1797,10 @@ async def get_source_performance_kpi(
                 "total_leads": {"$sum": 1},
                 "converted": {"$sum": {"$cond": [{"$eq": ["$status", "converted"]}, 1, 0]}}
             }},
-            {"$addFields": {"conversion_rate": {"$divide": ["$converted", "$total_leads"]}}},
+            {"$addFields": {
+                "source": "$_id",
+                "conversion_rate": {"$divide": ["$converted", "$total_leads"]}
+            }},
             {"$sort": {"conversion_rate": -1}}
         ]
         result = await current_db.leads.aggregate(pipeline).to_list(None)
