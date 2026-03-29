@@ -1869,6 +1869,24 @@ async def get_rbac_permissions(user: Dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _find_user_by_id(db, user_id: str):
+    """Find user by multiple criteria: id (UUID), ObjectId, or email"""
+    # Try id field first (UUID)
+    user = await db.crm_users.find_one({"id": user_id})
+    if user:
+        return user
+    # Try ObjectId
+    try:
+        user = await db.crm_users.find_one({"_id": ObjectId(user_id)})
+        if user:
+            return user
+    except Exception:
+        pass
+    # Try email
+    user = await db.crm_users.find_one({"email": user_id})
+    return user
+
+
 @router.put("/users/{user_id}/role")
 async def update_user_role(user_id: str, data: Dict = Body(...), admin: Dict = Depends(require_admin)):
     """Update user role (admin only)"""
@@ -1880,16 +1898,15 @@ async def update_user_role(user_id: str, data: Dict = Body(...), admin: Dict = D
         if new_role not in VALID_CRM_ROLES:
             raise HTTPException(status_code=400, detail=f"Invalid role. Valid roles: {VALID_CRM_ROLES}")
 
-        try:
-            user_query = {"_id": ObjectId(user_id)}
-        except Exception:
-            user_query = {"email": user_id}
+        user = await _find_user_by_id(current_db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
         result = await current_db.crm_users.update_one(
-            user_query,
+            {"_id": user["_id"]},
             {"$set": {"role": new_role, "updated_at": datetime.now(timezone.utc)}}
         )
-        
+
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -1911,15 +1928,15 @@ async def set_custom_permissions(user_id: str, data: Dict = Body(...), admin: Di
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
         permissions = data.get("permissions", [])
-        try:
-            user_query = {"_id": ObjectId(user_id)}
-        except Exception:
-            user_query = {"email": user_id}
+        user = await _find_user_by_id(current_db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
         result = await current_db.crm_users.update_one(
-            user_query,
+            {"_id": user["_id"]},
             {"$set": {"custom_permissions": permissions, "updated_at": datetime.now(timezone.utc)}}
         )
-        
+
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
