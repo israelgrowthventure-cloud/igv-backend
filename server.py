@@ -135,31 +135,36 @@ ADMIN_EMAIL = os.getenv('ADMIN_EMAIL')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
 BOOTSTRAP_TOKEN = os.getenv('BOOTSTRAP_TOKEN')
 
-# MongoDB - use MONGODB_URI (standard)
-mongo_url = os.getenv('MONGODB_URI')
-db_name = os.getenv('DB_NAME', 'igv_production')
+# MongoDB - accept standard + legacy env names
+mongo_url = (
+    os.getenv("MONGODB_URI")
+    or os.getenv("MONGODB_URL")
+    or os.getenv("MONGO_URL")
+)
+db_name = os.getenv("DB_NAME", "igv_production")
 
 if not mongo_url:
-    logging.error("❌ CRITICAL: MONGODB_URI must be set")
-    if os.getenv('ENVIRONMENT', 'development') == 'production':
-        raise ValueError("Missing MONGODB_URI")
+    logging.error("❌ CRITICAL: MongoDB URI must be set (MONGODB_URI/MONGODB_URL/MONGO_URL)")
+    if os.getenv("ENVIRONMENT", "development") == "production":
+        raise ValueError("Missing MongoDB URI")
 
-# Initialize MongoDB client (optional - will be None if not configured)
 client = None
 db = None
 mongodb_status = "not_configured"
 
 if mongo_url:
     try:
-        # Configure MongoDB with longer timeouts for Atlas replica set + Render latency
+        # Atlas / replica set: use less aggressive timeouts
         client = AsyncIOMotorClient(
             mongo_url,
-            serverSelectionTimeoutMS=30000,  # 30s to find primary in replica set
-            connectTimeoutMS=15000,  # 15s for TCP+TLS handshake
-            socketTimeoutMS=30000,  # 30s for socket operations
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=20000,
+            tls=True,
+            retryWrites=True,
             maxPoolSize=10,
             minPoolSize=1,
-            retryWrites=True  # Robust for replica set operations
+            appname="igv-backend",
         )
         db = client[db_name]
         mongodb_status = "configured"
@@ -176,17 +181,19 @@ async def verify_mongodb_connection():
     if not mongo_url:
         logging.warning("⚠️ MongoDB not configured")
         return False
+
     if db is None:
         logging.error("❌ MongoDB client not initialized")
         return False
+
     try:
-        await db.command('ping')
+        await db.command("ping")
         logging.info("✓ MongoDB connection verified")
         return True
     except Exception as e:
         logging.error(f"❌ MongoDB failed: {e}")
-        if os.getenv('ENVIRONMENT', 'development') == 'production':
-            raise
+        mongodb_env = "set" if mongo_url else "missing"
+        logging.error(f"MongoDB env: {mongodb_env}, db_name={db_name}")
         return False
 
 # Create the main app without a prefix
