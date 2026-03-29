@@ -66,7 +66,7 @@ async def _send_via_smtp(to_email: str, subject: str, body: str) -> bool:
         port=smtp_port,
         username=smtp_user,
         password=smtp_password,
-        use_tls=False,  # Port 465 is SMTPS (direct TLS), not STARTTLS
+        use_tls=True,
     )
     return True
 
