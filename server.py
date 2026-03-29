@@ -560,7 +560,7 @@ async def send_email_gmail(to_email: str, subject: str, body: str, html_body: st
             port=smtp_port,
             username=smtp_user,
             password=smtp_password,
-            use_tls=True  # SSL/TLS direct for OVH
+            use_tls=False  # Port 465 is SMTPS (direct TLS), not STARTTLS
         )
         return True
     except Exception as e:
