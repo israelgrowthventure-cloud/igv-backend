@@ -50,21 +50,8 @@ async def list_mini_analyses(
         if user.get("role") == "commercial":
             query["assigned_to"] = user.get("email")
         
-        # Try mini_analyses collection first, fallback to leads with source=mini-analyse
         total = await db.mini_analyses.count_documents(query)
-        
-        if total == 0:
-            # Fallback to leads
-            query_leads = {"source": {"$regex": "mini.?analy", "$options": "i"}}
-            if status:
-                query_leads["workflow_status"] = status
-            if user.get("role") == "commercial":
-                query_leads["owner_email"] = user.get("email")
-            
-            analyses = await db.leads.find(query_leads).sort("created_at", -1).skip(skip).limit(limit).to_list(length=limit)
-            total = await db.leads.count_documents(query_leads)
-        else:
-            analyses = await db.mini_analyses.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(length=limit)
+        analyses = await db.mini_analyses.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(length=limit)
         
         for analysis in analyses:
             analysis['_id'] = str(analysis['_id'])
@@ -115,25 +102,11 @@ async def get_mini_analysis_stats(
         async for doc in db.mini_analyses.aggregate(pipeline):
             status_counts[doc["_id"] or "pending"] = doc["count"]
         
-        # Also check leads with mini-analyse source
-        leads_pipeline = [
-            {"$match": {
-                "source": {"$regex": "mini.?analy", "$options": "i"},
-                "created_at": {"$gte": start_date}
-            }},
-            {"$group": {"_id": "$workflow_status", "count": {"$sum": 1}}}
-        ]
-        
-        async for doc in db.leads.aggregate(leads_pipeline):
-            key = doc["_id"] or "pending"
-            status_counts[key] = status_counts.get(key, 0) + doc["count"]
-        
         total = sum(status_counts.values())
         
         # Conversion rate
-        converted = await db.leads.count_documents({
-            "source": {"$regex": "mini.?analy", "$options": "i"},
-            "status": "converted",
+        converted = await db.mini_analyses.count_documents({
+            "converted_to_lead": True,
             "created_at": {"$gte": start_date}
         })
         
@@ -163,18 +136,10 @@ async def get_mini_analysis(
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
-        # Try mini_analyses collection
         try:
             analysis = await db.mini_analyses.find_one({"_id": ObjectId(analysis_id)})
         except:
             analysis = await db.mini_analyses.find_one({"analysis_id": analysis_id})
-        
-        # Fallback to leads
-        if not analysis:
-            try:
-                analysis = await db.leads.find_one({"_id": ObjectId(analysis_id)})
-            except:
-                analysis = await db.leads.find_one({"lead_id": int(analysis_id)})
         
         if not analysis:
             raise HTTPException(status_code=404, detail="Mini-analysis not found")
@@ -228,20 +193,10 @@ async def update_mini_analysis_status(
         if new_status not in valid_statuses:
             raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
         
-        # Try to find in mini_analyses
         try:
             analysis = await db.mini_analyses.find_one({"_id": ObjectId(analysis_id)})
-            collection = db.mini_analyses
         except:
-            analysis = None
-        
-        if not analysis:
-            # Fallback to leads
-            try:
-                analysis = await db.leads.find_one({"_id": ObjectId(analysis_id)})
-            except:
-                analysis = await db.leads.find_one({"lead_id": int(analysis_id)})
-            collection = db.leads
+            analysis = await db.mini_analyses.find_one({"analysis_id": analysis_id})
         
         if not analysis:
             raise HTTPException(status_code=404, detail="Mini-analysis not found")
@@ -258,7 +213,7 @@ async def update_mini_analysis_status(
         if new_status == "completed":
             update_data["completed_at"] = datetime.now(timezone.utc)
         
-        await collection.update_one(
+        await db.mini_analyses.update_one(
             {"_id": analysis["_id"]},
             {"$set": update_data}
         )
@@ -322,26 +277,17 @@ async def assign_mini_analysis(
         if not assign_to:
             raise HTTPException(status_code=400, detail="assign_to required")
         
-        # Find analysis
         try:
             analysis = await db.mini_analyses.find_one({"_id": ObjectId(analysis_id)})
-            collection = db.mini_analyses
         except:
-            analysis = None
-        
-        if not analysis:
-            try:
-                analysis = await db.leads.find_one({"_id": ObjectId(analysis_id)})
-            except:
-                analysis = await db.leads.find_one({"lead_id": int(analysis_id)})
-            collection = db.leads
+            analysis = await db.mini_analyses.find_one({"analysis_id": analysis_id})
         
         if not analysis:
             raise HTTPException(status_code=404, detail="Mini-analysis not found")
         
         old_assignee = analysis.get("assigned_to") or analysis.get("owner_email")
-        
-        await collection.update_one(
+
+        await db.mini_analyses.update_one(
             {"_id": analysis["_id"]},
             {
                 "$set": {
@@ -398,18 +344,6 @@ async def convert_mini_analysis_to_lead(
             analysis = None
         
         if not analysis:
-            # Already in leads?
-            try:
-                existing = await db.leads.find_one({"_id": ObjectId(analysis_id)})
-            except:
-                existing = None
-            
-            if existing:
-                return {
-                    "success": True,
-                    "message": "Already a lead",
-                    "lead_id": str(existing["_id"])
-                }
             raise HTTPException(status_code=404, detail="Mini-analysis not found")
         
         # Create lead from analysis
@@ -478,8 +412,8 @@ async def convert_mini_analysis_to_lead(
 
 # ==========================================
 
-# REMOVED: audit-log routes — active versions in crm/main.py (registered first):
-# GET /audit-logs               — see main.py line 1966
-# GET /audit-logs/stats         — see main.py line 1997
-# GET /audit-logs/entity/{...}  — see main.py line 2015
-# GET /audit-logs/user/{email}  — see main.py line 2035
+# REMOVED: audit-log routes ï¿½ active versions in crm/main.py (registered first):
+# GET /audit-logs               ï¿½ see main.py line 1966
+# GET /audit-logs/stats         ï¿½ see main.py line 1997
+# GET /audit-logs/entity/{...}  ï¿½ see main.py line 2015
+# GET /audit-logs/user/{email}  ï¿½ see main.py line 2035

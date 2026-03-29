@@ -435,7 +435,7 @@ class AdminUser(BaseModel):
     first_name: str = ""
     last_name: str = ""
     password_hash: str
-    role: str = 'admin'  # 'admin', 'sales', 'viewer'
+    role: str = 'admin'
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
 
@@ -448,7 +448,7 @@ class AdminUserCreate(BaseModel):
     first_name: str = ""
     last_name: str = ""
     password: str
-    role: str = 'viewer'  # Default to lowest privilege
+    role: str = 'commercial'
 
 # Security
 security = HTTPBearer()
@@ -827,11 +827,11 @@ async def bootstrap_admin(token: str):
     if token != BOOTSTRAP_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid bootstrap token")
     
-    # Check if admin already exists
-    existing_admin = await db.users.find_one({"email": ADMIN_EMAIL})
+    # Check if admin already exists in canonical crm_users collection
+    existing_admin = await db.crm_users.find_one({"email": ADMIN_EMAIL})
     if existing_admin:
         # Update password hash if it exists (allows password reset)
-        await db.users.update_one(
+        await db.crm_users.update_one(
             {"email": ADMIN_EMAIL},
             {"$set": {"password_hash": hash_password(ADMIN_PASSWORD)}}
         )
@@ -844,22 +844,18 @@ async def bootstrap_admin(token: str):
         role='admin'
     )
     
-    await db.users.insert_one(admin_user.model_dump())
+    await db.crm_users.insert_one(admin_user.model_dump())
     
     return {"message": "Admin created successfully", "email": ADMIN_EMAIL}
 
 @api_router.post("/admin/login")
 async def admin_login(credentials: AdminLoginRequest):
-    """Admin login - returns JWT token
-    Searches crm_users first (new collection), then users (legacy)
-    """
+    """Admin login - returns JWT token from canonical crm_users collection."""
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
-    # Search crm_users first (CRM users), then fallback to users (legacy)
+    # Canonical CRM users collection only
     user = await db.crm_users.find_one({"email": credentials.email})
-    if not user:
-        user = await db.users.find_one({"email": credentials.email})
     
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -879,23 +875,20 @@ async def admin_login(credentials: AdminLoginRequest):
     # MIGRATION: Si le hash est SHA256, migrer vers bcrypt
     if is_sha256_hash(password_hash):
         new_hash = hash_password(credentials.password)
-        collection_for_migrate = db.crm_users if await db.crm_users.find_one({"email": credentials.email}) else db.users
-        await collection_for_migrate.update_one(
+        await db.crm_users.update_one(
             {"email": credentials.email},
             {"$set": {"password_hash": new_hash}}
         )
         logging.info(f"✓ Password hash migrated from SHA256 to bcrypt for {credentials.email}")
     
-    # Get role (default to admin for legacy users without role)
-    user_role = user.get('role', 'admin')
+    user_role = user.get('role', 'readonly')
     user_name = user.get('name') or user.get('first_name', '') + ' ' + user.get('last_name', '')
     user_name = user_name.strip() or credentials.email.split('@')[0]
     
     token = create_jwt_token(credentials.email, user_role)
     
     # Update last_login timestamp
-    collection = db.crm_users if await db.crm_users.find_one({"email": credentials.email}) else db.users
-    await collection.update_one(
+    await db.crm_users.update_one(
         {"email": credentials.email},
         {"$set": {"last_login": datetime.now(timezone.utc)}}
     )
@@ -918,8 +911,6 @@ async def verify_admin_token_endpoint(user: Dict = Depends(get_current_user)):
     if not user_name and db is not None:
         try:
             db_user = await db.crm_users.find_one({"email": user['email']})
-            if not db_user:
-                db_user = await db.users.find_one({"email": user['email']})
             if db_user:
                 first = db_user.get('first_name', '') or ''
                 last = db_user.get('last_name', '') or ''
@@ -950,7 +941,7 @@ async def get_all_contacts(user: Dict = Depends(get_current_user)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
-    if user['role'] not in ['admin', 'editor', 'viewer']:
+    if user['role'] not in ['admin', 'manager', 'commercial', 'support', 'readonly']:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     contacts = await db.contacts.find({}, {"_id": 0}).sort("timestamp", -1).to_list(1000)
@@ -958,11 +949,11 @@ async def get_all_contacts(user: Dict = Depends(get_current_user)):
 
 @api_router.get("/admin/stats")
 async def get_stats(user: Dict = Depends(get_current_user)):
-    """Get dashboard statistics (admin/sales/viewer)"""
+    """Get dashboard statistics for CRM roles."""
     if db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     
-    if user['role'] not in ['admin', 'sales', 'viewer']:
+    if user['role'] not in ['admin', 'manager', 'commercial', 'support', 'readonly']:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     try:
@@ -996,7 +987,7 @@ async def get_stats(user: Dict = Depends(get_current_user)):
 
 # REMOVED: POST /admin/users - now handled by admin_user_routes.py (returns proper user_id + user object)
 # REMOVED: GET /admin/users - now handled by admin_user_routes.py (uses crm_users collection)
-# Old endpoints used db.users collection, new ones use db.crm_users (correct for CRM)
+# Active CRM user flows use db.crm_users as single source of truth.
 
 
 
@@ -1503,20 +1494,7 @@ async def create_default_admin_if_not_exists():
             logging.info(f"✓ Admin password updated in crm_users: {admin_email}")
             return
         
-        # Check in legacy users collection - if exists, create in crm_users anyway
-        existing_legacy = await db.users.find_one({"email": admin_email})
-        if existing_legacy:
-            # Also update legacy collection password
-            await db.users.update_one(
-                {"email": admin_email},
-                {"$set": {
-                    "password_hash": hash_password(admin_password),
-                    "role": "admin"
-                }}
-            )
-            logging.info(f"✓ Admin password updated in legacy users: {admin_email}")
-        
-        # Create admin in crm_users (even if exists in legacy - for consistency)
+        # Create admin in crm_users
         import uuid
         admin_doc = {
             "id": str(uuid.uuid4()),
@@ -1555,10 +1533,7 @@ async def create_default_admin_if_not_exists():
 #         if result.deleted_count > 0:
 #             logging.info(f"✓ Cleaned up {result.deleted_count} users from crm_users (kept only {admin_email})")
 #         
-#         # Also clean legacy users except admin
-#         result_legacy = await db.users.delete_many({"email": {"$ne": admin_email}})
-#         if result_legacy.deleted_count > 0:
-#             logging.info(f"✓ Cleaned up {result_legacy.deleted_count} users from legacy users collection")
+#         # Legacy users cleanup intentionally disabled.
 #             
 #     except Exception as e:
 #         logging.error(f"Failed to cleanup users: {e}")

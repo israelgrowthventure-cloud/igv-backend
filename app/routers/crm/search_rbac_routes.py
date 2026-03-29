@@ -334,17 +334,9 @@ async def set_custom_permissions(
             target_user = await db.crm_users.find_one({"email": user_id})
         
         if not target_user:
-            try:
-                target_user = await db.users.find_one({"_id": ObjectId(user_id)})
-            except:
-                target_user = await db.users.find_one({"email": user_id})
-        
-        if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
-        
-        collection = db.crm_users if await db.crm_users.find_one({"_id": target_user["_id"]}) else db.users
-        
-        await collection.update_one(
+
+        await db.crm_users.update_one(
             {"_id": target_user["_id"]},
             {
                 "$set": {
@@ -417,10 +409,7 @@ async def get_team_members(
         if role:
             query["role"] = role
         
-        # Try crm_users first
         users = await db.crm_users.find(query).to_list(length=100)
-        if not users:
-            users = await db.users.find(query).to_list(length=100)
         
         team = []
         for u in users:
@@ -475,8 +464,6 @@ async def bulk_assign_leads(
         
         # Verify target user exists
         target = await db.crm_users.find_one({"email": assign_to})
-        if not target:
-            target = await db.users.find_one({"email": assign_to})
         if not target:
             raise HTTPException(status_code=404, detail="Target user not found")
         

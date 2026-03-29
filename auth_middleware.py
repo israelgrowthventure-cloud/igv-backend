@@ -76,10 +76,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if not email:
             raise HTTPException(status_code=401, detail="Invalid token payload")
         
-        # Search in crm_users first (new collection), then fallback to users (legacy)
+        # Single source of truth for CRM users
         user = await current_db.crm_users.find_one({"email": email})
-        if not user:
-            user = await current_db.users.find_one({"email": email})
         
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
@@ -93,7 +91,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             "id": str(user["_id"]),
             "email": user["email"],
             "name": user.get("name", email.split("@")[0]),
-            "role": user.get("role", "admin"),  # Default admin for legacy users
+            "role": user.get("role", "readonly"),
             "assigned_leads": user.get("assigned_leads", [])
         }
     

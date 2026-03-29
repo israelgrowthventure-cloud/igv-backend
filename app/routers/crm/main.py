@@ -291,19 +291,8 @@ async def get_dashboard_stats(user: Dict = Depends(get_current_user)):
         # Total contacts
         total_contacts = await current_db.contacts.count_documents({})
         
-        # Mini-analyses count (from mini_analyses collection + leads with source=mini-analyse)
-        mini_analyses_count = 0
-        try:
-            # Count from dedicated collection
-            mini_analyses_count = await current_db.mini_analyses.count_documents({})
-        except:
-            pass
-        
-        # Also count leads with mini-analyse source
-        mini_leads = await current_db.leads.count_documents({
-            "source": {"$regex": "mini.?analy", "$options": "i"}
-        })
-        mini_analyses_total = mini_analyses_count + mini_leads
+        # Mini-analyses source of truth: dedicated mini_analyses collection only
+        mini_analyses_total = await current_db.mini_analyses.count_documents({})
         
         # Return in format expected by frontend (nested structure)
         return {
@@ -1158,13 +1147,6 @@ async def get_email_drafts(user: Dict = Depends(get_current_user), limit: int = 
             "status": "draft",
             "created_by": user["email"]
         }).sort("updated_at", -1).limit(limit).to_list(limit)
-        
-        # Fallback: also check legacy email_drafts collection
-        if not drafts:
-            legacy = await current_db.email_drafts.find({
-                "created_by": user["email"]
-            }).sort("created_at", -1).limit(limit).to_list(limit)
-            drafts = legacy
 
         for draft in drafts:
             draft["_id"] = str(draft["_id"])
@@ -1217,12 +1199,6 @@ async def delete_email_draft_legacy(draft_id: str, user: Dict = Depends(get_curr
             "status": "draft",
             "created_by": user["email"]
         })
-        if result.deleted_count == 0:
-            # Try legacy email_drafts collection
-            result = await current_db.email_drafts.delete_one({
-                "_id": ObjectId(draft_id),
-                "created_by": user["email"]
-            })
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Draft not found")
         return {"success": True, "message": "Draft deleted"}
@@ -1664,17 +1640,6 @@ async def update_lead_next_action(lead_id: Annotated[str, Path(pattern=r"^[a-f0-
     except Exception as e:
         logging.error(f"[CRM Leads] Error updating next action: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# LOGOUT (from crm_missing_routes)
-# ==========================================
-
-@router.post("/logout")
-async def crm_logout(user: Dict = Depends(get_current_user)):
-    """Logout endpoint - stateless confirmation (frontend clears token)"""
-    logging.info(f"User {user['email']} logged out from CRM")
-    return {"success": True, "message": "Logged out successfully"}
 
 
 # ==========================================
@@ -2417,8 +2382,7 @@ async def get_email_history(
     lead_id: Optional[str] = None,
     user: Dict = Depends(get_current_user)
 ):
-    """Get email history — reads from canonical 'emails' collection (status != draft),
-    with fallback to legacy 'email_history' collection for older records."""
+    """Get email history from canonical 'emails' collection (status != draft)."""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -2429,14 +2393,6 @@ async def get_email_history(
 
         emails = await current_db.emails.find(query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
         total = await current_db.emails.count_documents(query)
-
-        # Fallback: also fetch legacy email_history records not already present
-        if not emails:
-            legacy_query = {}
-            if lead_id:
-                legacy_query["lead_id"] = lead_id
-            emails = await current_db.email_history.find(legacy_query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
-            total = await current_db.email_history.count_documents(legacy_query)
 
         for email in emails:
             email["_id"] = str(email["_id"])
@@ -2750,11 +2706,21 @@ async def get_contact_emails(contact_id: str, user: Dict = Depends(get_current_u
     try:
         # Get contact to find email address
         contact = await current_db.contacts.find_one({"_id": ObjectId(contact_id)})
-        query = {"contact_id": contact_id}
-        if contact and contact.get("email"):
-            query = {"$or": [{"contact_id": contact_id}, {"recipient_email": contact["email"]}]}
 
-        emails = await current_db.email_history.find(query).sort("sent_at", -1).to_list(100)
+        email_query = {
+            "status": {"$ne": "draft"},
+            "$or": [
+                {"contact_id": contact_id}
+            ]
+        }
+        if contact and contact.get("email"):
+            email_query["$or"].extend([
+                {"recipient_email": contact["email"]},
+                {"to_email": contact["email"]},
+                {"to": contact["email"]}
+            ])
+
+        emails = await current_db.emails.find(email_query).sort("sent_at", -1).to_list(100)
         for email in emails:
             email["_id"] = str(email["_id"])
             email["id"] = email["_id"]
@@ -2838,20 +2804,14 @@ async def get_opportunity_activities(opp_id: str, user: Dict = Depends(get_curre
 
 @router.delete("/emails/{email_id}")
 async def delete_email(email_id: str, user: Dict = Depends(get_current_user)):
-    """Delete an email from canonical emails collection (with legacy email_history fallback)"""
+    """Delete an email from canonical emails collection"""
     current_db = get_db()
     if current_db is None:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
-        # Try primary emails collection first
         result = await current_db.emails.delete_one({"_id": ObjectId(email_id)})
         if result.deleted_count == 0:
-            # Fallback to legacy email_history collection
-            result = await current_db.email_history.delete_one({"_id": ObjectId(email_id)})
-        if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Email not found")
-        # Also remove from email_history mirror if present
-        await current_db.email_history.delete_one({"email_id": email_id})
         return {"success": True, "message": "Email deleted"}
     except HTTPException:
         raise
