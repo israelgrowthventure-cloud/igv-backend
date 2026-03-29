@@ -52,12 +52,17 @@ async def _send_via_smtp(to_email: str, subject: str, body: str) -> bool:
         logger.warning("SMTP_PASSWORD not configured — email stored but not sent via SMTP")
         return False
 
+    # Create plain text version from HTML
+    plain_text = re.sub('<[^<]+?>', '', body)
+
     message = MIMEMultipart('alternative')
     message['Subject'] = subject
     message['From'] = f"Israel Growth Venture <{smtp_from}>"
     message['To'] = to_email
     message['Reply-To'] = smtp_from
 
+    # Attach plain text first, then HTML (MIME best practice)
+    message.attach(MIMEText(plain_text, 'plain'))
     message.attach(MIMEText(body, 'html'))
 
     await aiosmtplib.send(
