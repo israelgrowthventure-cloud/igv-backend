@@ -1879,9 +1879,14 @@ async def update_user_role(user_id: str, data: Dict = Body(...), admin: Dict = D
         new_role = data.get("role")
         if new_role not in VALID_CRM_ROLES:
             raise HTTPException(status_code=400, detail=f"Invalid role. Valid roles: {VALID_CRM_ROLES}")
-        
+
+        try:
+            user_query = {"_id": ObjectId(user_id)}
+        except Exception:
+            user_query = {"email": user_id}
+
         result = await current_db.crm_users.update_one(
-            {"_id": ObjectId(user_id)},
+            user_query,
             {"$set": {"role": new_role, "updated_at": datetime.now(timezone.utc)}}
         )
         
@@ -1906,8 +1911,12 @@ async def set_custom_permissions(user_id: str, data: Dict = Body(...), admin: Di
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
         permissions = data.get("permissions", [])
+        try:
+            user_query = {"_id": ObjectId(user_id)}
+        except Exception:
+            user_query = {"email": user_id}
         result = await current_db.crm_users.update_one(
-            {"_id": ObjectId(user_id)},
+            user_query,
             {"$set": {"custom_permissions": permissions, "updated_at": datetime.now(timezone.utc)}}
         )
         
