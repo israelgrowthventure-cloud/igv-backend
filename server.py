@@ -151,14 +151,15 @@ mongodb_status = "not_configured"
 
 if mongo_url:
     try:
-        # Configure MongoDB with timeout and connection pooling
+        # Configure MongoDB with longer timeouts for Atlas replica set + Render latency
         client = AsyncIOMotorClient(
             mongo_url,
-            serverSelectionTimeoutMS=5000,  # 5 second timeout
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000,
+            serverSelectionTimeoutMS=30000,  # 30s to find primary in replica set
+            connectTimeoutMS=15000,  # 15s for TCP+TLS handshake
+            socketTimeoutMS=30000,  # 30s for socket operations
             maxPoolSize=10,
-            minPoolSize=1
+            minPoolSize=1,
+            retryWrites=True  # Robust for replica set operations
         )
         db = client[db_name]
         mongodb_status = "configured"
@@ -357,9 +358,9 @@ async def health_check():
     
     if mongodb_status == "configured" and db is not None:
         try:
-            # Test MongoDB connection with timeout
+            # Test MongoDB connection with longer timeout for Atlas replica set
             import asyncio
-            await asyncio.wait_for(db.command('ping'), timeout=3.0)
+            await asyncio.wait_for(db.command('ping'), timeout=15.0)
             health_status["mongodb"] = "connected"
             health_status["db"] = db_name
         except asyncio.TimeoutError:
