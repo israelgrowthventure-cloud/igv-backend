@@ -53,7 +53,9 @@ async def _send_via_smtp(to_email: str, subject: str, body: str) -> bool:
         return False
 
     # Create plain text version from HTML
-    plain_text = re.sub('<[^<]+?>', '', body)
+    plain_body = re.sub(r"<[^>]+>", "", body or "").strip()
+    if not plain_body:
+        plain_body = subject or "Message"
 
     message = MIMEMultipart('alternative')
     message['Subject'] = subject
@@ -62,8 +64,8 @@ async def _send_via_smtp(to_email: str, subject: str, body: str) -> bool:
     message['Reply-To'] = smtp_from
 
     # Attach plain text first, then HTML (MIME best practice)
-    message.attach(MIMEText(plain_text, 'plain'))
-    message.attach(MIMEText(body, 'html'))
+    message.attach(MIMEText(plain_body, "plain", "utf-8"))
+    message.attach(MIMEText(body or "", "html", "utf-8"))
 
     await aiosmtplib.send(
         message,
@@ -112,8 +114,8 @@ async def send_email_advanced(
         subject = email_data.get("subject", "")
         body = email_data.get("body") or email_data.get("message", "")
         attachments = email_data.get("attachments", [])
-        track_opens = email_data.get("track_opens", True)
-        track_clicks = email_data.get("track_clicks", True)
+        track_opens = email_data.get("track_opens", False)
+        track_clicks = email_data.get("track_clicks", False)
         
         if not to_email:
             raise HTTPException(status_code=400, detail="Recipient email required")
