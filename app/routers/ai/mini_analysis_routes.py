@@ -9,6 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import re
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import google.genai as genai
@@ -1109,49 +1110,76 @@ async def generate_mini_analysis(request: MiniAnalysisRequest, response: Respons
             )
         
         # CRITICAL: contents MUST be a list for google-genai 0.2.2
-        # Signature: contents: list[Content | list[Part | str] | Part | str]
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[prompt]  # Wrap prompt in a list
+        # Run Gemini in thread executor (sync call) with 50s timeout to avoid
+        # blocking the event loop and prevent Render proxy 504 without CORS headers.
+        loop = asyncio.get_event_loop()
+        _model = GEMINI_MODEL
+        _prompt = prompt
+        gemini_response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: gemini_client.models.generate_content(
+                    model=_model,
+                    contents=[_prompt]
+                )
+            ),
+            timeout=50
         )
-        
+
         # Extract text from response
-        analysis_text = response.text if hasattr(response, 'text') else str(response)
-        
+        analysis_text = gemini_response.text if hasattr(gemini_response, 'text') else str(gemini_response)
+
         logging.info(f"[{request_id}] ✅ Gemini response received: {len(analysis_text)} characters")
-        
+
         # LANG_FAIL DETECTION (MISSION A.5)
         if "LANG_FAIL" in analysis_text:
             logging.error(f"[{request_id}] ❌ LANG_FAIL detected - Gemini failed to respect language={language}")
             logging.warning(f"[{request_id}] Retrying with stricter language instruction...")
-            
+
             # Retry with stricter instruction
             retry_prompts = {
                 "fr": f"CRITIQUE: Répondez UNIQUEMENT en français, pas en anglais, pas en hébreu.\n\n{prompt}",
                 "en": f"CRITICAL: Answer ONLY in English, not in French, not in Hebrew.\n\n{prompt}",
                 "he": f"קריטי: ענה רק בעברית, לא בצרפתית, לא באנגלית.\n\n{prompt}"
             }
-            
+
             retry_prompt = retry_prompts.get(language, prompt)
-            response = gemini_client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=[retry_prompt]
+            _retry_prompt = retry_prompt
+            gemini_response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: gemini_client.models.generate_content(
+                        model=_model,
+                        contents=[_retry_prompt]
+                    )
+                ),
+                timeout=50
             )
-            
-            analysis_text = response.text if hasattr(response, 'text') else str(response)
+
+            analysis_text = gemini_response.text if hasattr(gemini_response, 'text') else str(gemini_response)
             logging.info(f"[{request_id}] Retry response: {len(analysis_text)} characters")
-            
+
             if "LANG_FAIL" in analysis_text:
                 logging.error(f"[{request_id}] ❌ LANG_FAIL persists after retry")
-        
+
         if not analysis_text:
             raise HTTPException(
                 status_code=500,
                 detail={"error": "Réponse IA vide", "request_id": request_id}
             )
-        
+
     except HTTPException:
         raise  # Re-raise HTTPException as-is
+    except asyncio.TimeoutError:
+        logging.error(f"[{request_id}] ❌ Gemini timeout (>50s) — responding before Render proxy timeout")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "L'analyse IA prend trop de temps, veuillez réessayer dans quelques instants",
+                "request_id": request_id,
+                "error_type": "GeminiTimeout"
+            }
+        )
     except AttributeError as e:
         import traceback
         error_trace = traceback.format_exc()
