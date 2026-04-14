@@ -18,7 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 # ── Configuration ────────────────────────────────────────────────────────────
 router = APIRouter(prefix="/api")
 
-mongo_url = os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+mongo_url = os.getenv('MONGODB_URI')
 db_name = os.getenv('DB_NAME', 'igv_production')
 
 EMAIL_FROM = os.getenv('EMAIL_FROM', 'noreply@israelgrowthventure.com')

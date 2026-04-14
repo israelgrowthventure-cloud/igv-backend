@@ -64,6 +64,58 @@ articles/{fr,en,he}/{slug}.md      # Contenu des articles en markdown
 
 ---
 
+## ENVIRONMENT VARIABLES — SOURCE OF TRUTH
+
+Les variables d'environnement utilisées en production sont celles définies sur Render.
+**Aucun autre nom de variable ne doit être utilisé dans le code.**
+
+### Règle obligatoire
+
+Avant toute correction liée à une API, base de données ou service externe,
+vérifier que la variable d'environnement utilisée correspond exactement à celle définie sur Render.
+
+### Variables backend autorisées (Render → igv-cms-backend)
+
+```
+MONGODB_URI
+DB_NAME
+GEMINI_API_KEY
+SMTP_HOST
+SMTP_PORT
+SMTP_USER
+SMTP_PASSWORD
+SMTP_FROM
+JWT_SECRET_KEY
+ACCESS_TOKEN_EXPIRE_MINUTES
+ENVIRONMENT
+PORT
+```
+
+### Variables frontend autorisées (Render → igv-frontend)
+
+```
+NEXT_PUBLIC_BACKEND_URL
+```
+
+### Interdits absolus
+
+| Variable interdite | Raison |
+|--------------------|--------|
+| `MONGO_URL` | Alias non canonique — utiliser `MONGODB_URI` |
+| `MONGODB_URL` | Alias non canonique — utiliser `MONGODB_URI` |
+| `REACT_APP_API_URL` | Variable CRA obsolète — utiliser `NEXT_PUBLIC_BACKEND_URL` |
+| `REACT_APP_AUDIT_BOOKING_URL` | Variable CRA obsolète — non définie sur Render |
+| `REACT_APP_AUDIT_PAYMENT_URL` | Variable CRA obsolète — non définie sur Render |
+| Tout autre alias | Non défini sur Render → non supporté |
+
+### Comportement en cas d'absence
+
+- Le code doit **échouer explicitement** avec un message d'erreur clair.
+- **Interdit** : fallback silencieux (`or 'valeur'`, `|| 'valeur'`) pour les variables critiques.
+- Les tests locaux peuvent utiliser des valeurs simulées, mais ces valeurs ne valident **jamais** un comportement de production.
+
+---
+
 ## 3. DÉPLOIEMENT
 
 | Service | URL | Plateforme |

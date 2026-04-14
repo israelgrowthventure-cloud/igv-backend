@@ -26,7 +26,7 @@ security = HTTPBearer()
 # ──────────────────────────────────────────
 # MongoDB
 # ──────────────────────────────────────────
-_mongo_url = os.getenv('MONGODB_URL') or os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+_mongo_url = os.getenv('MONGODB_URI')
 _db_name = os.getenv('DB_NAME', 'igv_production')
 _mongo_client = None
 _db = None
@@ -47,7 +47,7 @@ def get_db():
 # ──────────────────────────────────────────
 # JWT helpers
 # ──────────────────────────────────────────
-JWT_SECRET = os.getenv('JWT_SECRET')
+JWT_SECRET = os.getenv('JWT_SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 
 

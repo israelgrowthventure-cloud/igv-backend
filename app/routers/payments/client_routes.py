@@ -21,7 +21,7 @@ from auth_middleware import get_db
 router = APIRouter(prefix="/api/client", tags=["client"])
 
 # JWT Configuration
-JWT_SECRET = os.getenv('JWT_SECRET')
+JWT_SECRET = os.getenv('JWT_SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 CLIENT_TOKEN_EXPIRATION_HOURS = 72  # Clients have longer sessions
 

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URL = os.getenv("MONGO_URL") or os.getenv("MONGODB_URI")
+MONGO_URL = os.getenv("MONGODB_URI")
 
 # Default content for all pages in all languages
 PAGE_CONTENT = {

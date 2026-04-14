@@ -23,7 +23,7 @@ from auth_middleware import get_current_user, get_db
 router = APIRouter(prefix="/api", tags=["CMS, Media & Auth"])
 
 # JWT Configuration
-JWT_SECRET = os.getenv('JWT_SECRET')
+JWT_SECRET = os.getenv('JWT_SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 PASSWORD_RESET_EXPIRATION_HOURS = 1
 

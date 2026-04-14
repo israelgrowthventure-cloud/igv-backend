@@ -17,8 +17,10 @@ services:
         sync: false
       - key: DB_NAME
         sync: false
-      - key: JWT_SECRET
+      - key: JWT_SECRET_KEY
         sync: false
+      - key: ENVIRONMENT
+        value: production
       - key: CMS_PASSWORD
         sync: false
       - key: ADMIN_OAUTH_KEY

@@ -14,7 +14,7 @@ import logging
 router = APIRouter(prefix="/api/track")
 
 # MongoDB connection
-mongo_url = os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+mongo_url = os.getenv('MONGODB_URI')
 db_name = os.getenv('DB_NAME', 'igv_production')
 
 mongo_client = None

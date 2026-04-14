@@ -164,15 +164,15 @@ async def diagnose_smtp():
     }
 
 # MongoDB connection (from server.py)
-mongo_url = os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+mongo_url = os.getenv('MONGODB_URI')
 db_name = os.getenv('DB_NAME', 'igv_production')
 
 # SMTP Config - OVH (contact@israelgrowthventure.com)
-SMTP_SERVER = os.getenv('SMTP_SERVER') or os.getenv('SMTP_HOST', 'ssl0.ovh.net')
+SMTP_SERVER = os.getenv('SMTP_HOST', 'ssl0.ovh.net')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '465'))
-SMTP_USERNAME = os.getenv('SMTP_USERNAME') or os.getenv('SMTP_USER', 'contact@israelgrowthventure.com')
+SMTP_USERNAME = os.getenv('SMTP_USER', 'contact@israelgrowthventure.com')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
-SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or os.getenv('SMTP_FROM', 'contact@israelgrowthventure.com')
+SMTP_FROM_EMAIL = os.getenv('SMTP_FROM', 'contact@israelgrowthventure.com')
 SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'Israel Growth Venture')
 
 # Company info

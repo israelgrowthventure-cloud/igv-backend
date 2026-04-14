@@ -128,25 +128,20 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # JWT & Admin configuration (from environment only)
-JWT_SECRET = os.getenv('JWT_SECRET')
+JWT_SECRET = os.getenv('JWT_SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 168  # 7 days — avoids frequent session drops
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
 BOOTSTRAP_TOKEN = os.getenv('BOOTSTRAP_TOKEN')
 
-# MongoDB - accept standard + legacy env names
-mongo_url = (
-    os.getenv("MONGODB_URI")
-    or os.getenv("MONGODB_URL")
-    or os.getenv("MONGO_URL")
-)
+# MongoDB — single canonical variable: MONGODB_URI
+mongo_url = os.getenv("MONGODB_URI")
 db_name = os.getenv("DB_NAME", "igv_production")
 
 if not mongo_url:
-    logging.error("❌ CRITICAL: MongoDB URI must be set (MONGODB_URI/MONGODB_URL/MONGO_URL)")
-    if os.getenv("ENVIRONMENT", "development") == "production":
-        raise ValueError("Missing MongoDB URI")
+    logging.error("❌ CRITICAL: MONGODB_URI environment variable is not set")
+    raise ValueError("Missing MONGODB_URI — backend cannot start without a database connection")
 
 client = None
 db = None

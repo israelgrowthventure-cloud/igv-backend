@@ -13,9 +13,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGODB_URL = os.getenv('MONGODB_URL')
+MONGODB_URL = os.getenv('MONGODB_URI')
 if not MONGODB_URL:
-    raise Exception("❌ MONGODB_URL manquant dans .env")
+    raise Exception("❌ MONGODB_URI manquant dans .env")
 
 client = AsyncIOMotorClient(MONGODB_URL)
 db = client.igv_crm

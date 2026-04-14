@@ -48,9 +48,9 @@ router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
 # ─── Config ─────────────────────────────────────────────────────────────────
-mongo_url = os.getenv("MONGODB_URI") or os.getenv("MONGO_URL")
+mongo_url = os.getenv("MONGODB_URI")
 db_name   = os.getenv("DB_NAME", "igv_production")
-JWT_SECRET    = os.getenv("JWT_SECRET")
+JWT_SECRET    = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = "HS256"
 
 PUBLIC_BASE_URL  = os.getenv("PUBLIC_BASE_URL",  "https://israelgrowthventure.com")

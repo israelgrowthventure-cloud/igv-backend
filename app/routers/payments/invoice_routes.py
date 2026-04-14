@@ -82,7 +82,7 @@ router = APIRouter(prefix="/api/invoices")
 security = HTTPBearer()
 
 # MongoDB
-mongo_url = os.getenv('MONGODB_URI') or os.getenv('MONGO_URL')
+mongo_url = os.getenv('MONGODB_URI')
 db_name = os.getenv('DB_NAME', 'igv_production')
 
 mongo_client = None
@@ -100,15 +100,15 @@ def get_db():
     return db
 
 # JWT
-JWT_SECRET = os.getenv('JWT_SECRET')
+JWT_SECRET = os.getenv('JWT_SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 
-# SMTP Config - Support both naming conventions
-SMTP_SERVER = os.getenv('SMTP_SERVER') or os.getenv('SMTP_HOST', 'smtp.gmail.com')
+# SMTP Config
+SMTP_SERVER = os.getenv('SMTP_HOST', 'smtp.gmail.com')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SMTP_USERNAME = os.getenv('SMTP_USERNAME') or os.getenv('SMTP_USER')
+SMTP_USERNAME = os.getenv('SMTP_USER')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
-SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or os.getenv('SMTP_FROM', 'israel.growth.venture@gmail.com')
+SMTP_FROM_EMAIL = os.getenv('SMTP_FROM', 'israel.growth.venture@gmail.com')
 SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'Israel Growth Venture')
 
 # Company info
